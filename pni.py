@@ -9,6 +9,8 @@ class FieldforceTCM:
     Component = namedtuple('Component', [ 'name', 'struct' ])
     ModInfo   = namedtuple('ModInfo', [ 'Type', 'Revision' ])
 
+    struct_uint8   = Struct('>B')
+    struct_uint32  = Struct('>I')
     struct_float32 = Struct('>f')
     struct_boolean = Struct('>?')
 
@@ -52,6 +54,33 @@ class FieldforceTCM:
         27: Component('XAligned',    struct_float32),
         28: Component('YAligned',    struct_float32),
         29: Component('ZAligned',    struct_float32)
+    }
+
+    # Config IDs
+    kDeclination         = 1
+    kTrueNorth           = 2
+    kBigEndian           = 6
+    kMountingRef         = 10
+    kUserCalNumPoints    = 12
+    kUserCalAutoSampling = 13
+    kBaudRate            = 14
+    kMilOutput           = 15
+    kDataCal             = 16
+    kCoeffCopySet        = 18
+    kAccelCoeffCopySet   = 19
+
+    config = {
+        1:  Component('Declination',         struct_float32),
+        2:  Component('TrueNorth',           struct_boolean),
+        6:  Component('BigEndian',           struct_boolean),
+        10: Component('MountingRef',         struct_uint8),
+        12: Component('UserCalNumPoints',    struct_uint32),
+        13: Component('UserCalAutoSampling', struct_boolean),
+        14: Component('BaudRate',            struct_uint8),
+        15: Component('MilOutput',           struct_boolean),
+        16: Component('DataCal',             struct_boolean),
+        18: Component('CoeffCopySet',        struct_uint32),
+        19: Component('AccelCoeffCopySet',   struct_uint32)
     }
 
     def __init__(self, path):
@@ -141,11 +170,30 @@ class FieldforceTCM:
 
         return data
 
+    def setConfig(self, config_id, value):
+        payload_id    = self.struct_uint8.pack(config_id)
+        payload_value = self.config[config_id].struct.pack(value)
+        self._sendMessage(self.kSetConfig, payload_id + payload_value)
+        self._recvSpecificMessage(self.kSetConfigDone)
+
+    def getConfig(self, config_id):
+        payload_id = self.struct_uint8.pack(config_id)
+        self._sendMessage(self.kGetConfig, payload_id)
+
+        response = self._recvSpecificMessage(self.kConfigResp)
+        (response_id, ) = self.struct_uint8.unpack(response[0])
+
+        if response_id == config_id:
+            (value, ) = self.config[config_id].struct.unpack(response[1:])
+            return value
+        else:
+            raise IOError('Response has unexpected configuration ID.')
 
 def main():
     with FieldforceTCM('/dev/ttyUSB0') as compass:
-        print 'ModInfo: ', compass.getModInfo()
-        print 'Data:    ', compass.getData()
+        print 'ModInfo:     ', compass.getModInfo()
+        print 'Data:        ', compass.getData()
+        print 'Declination: ', compass.getConfig(compass.kDeclination)
 
 if __name__ == '__main__':
     sys.exit(main())
