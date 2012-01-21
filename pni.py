@@ -8,8 +8,11 @@ from struct import Struct
 class FieldforceTCM:
     Component = namedtuple('Component', [ 'name', 'struct' ])
     ModInfo   = namedtuple('ModInfo', [ 'Type', 'Revision' ])
+    CalScores = namedtuple('CalScores', [ 'CalScore', 'CalParam2', 'AccelCalScore',
+                                          'DistError', 'TiltError', 'TiltRange' ])
 
     struct_uint8   = Struct('>B')
+    struct_uint16  = Struct('>H')
     struct_uint32  = Struct('>I')
     struct_float32 = Struct('>f')
     struct_boolean = Struct('>?')
@@ -83,6 +86,32 @@ class FieldforceTCM:
         19: Component('AccelCoeffCopySet',   struct_uint32)
     }
 
+    # Calibration Modes
+    kFullRangeCalibration     = 10
+    k2DCalibration            = 20
+    kHardIronCalibration      = 30
+    kLimitedTiltCalibraion    = 40
+    kAccelCalibration         = 100
+    kAccelMagneticCalibration = 110
+
+    # Orientations
+    kOrientationSTD0     = 1
+    kOrientationXUP0     = 2
+    kOrientationYUP0     = 3
+    kOrientationSTD90    = 4
+    kOrientationSTD180   = 5
+    kOrientationSTD270   = 6
+    kOrientationZDOWN0   = 7
+    kOrientationXUP90    = 8
+    kOrientationXUP180   = 9
+    kOrientationXUP270   = 10
+    kOrientationYUP90    = 11
+    kOrientationYUP180   = 12
+    kOrientationYUP270   = 13
+    kOrientationZDOWN90  = 14
+    kOrientationZDOWN180 = 15
+    kOrientationZDOWN270 = 16
+
     def __init__(self, path):
         self.fp = Serial(
             port     = path,
@@ -141,7 +170,8 @@ class FieldforceTCM:
         if frame_id == expected_frame_id:
             return data
         else:
-            raise IOError('Response has unexpected frame type.')
+            raise IOError('Response has unexpected frame id: {0}.'
+                          .format(frame_id))
 
     def getModInfo(self):
         self._sendMessage(self.kGetModInfo, b'')
@@ -187,13 +217,61 @@ class FieldforceTCM:
             (value, ) = self.config[config_id].struct.unpack(response[1:])
             return value
         else:
-            raise IOError('Response has unexpected configuration ID.')
+            raise IOError('Response has unexpected configuration id: {0}.'
+                           .format(response_id))
+
+    def setDeclination(self, declination):
+        assert -180.0 <= declination <= +180.0
+        self.setConfig(kDeclination, declination)
+
+    def setTrueNorth(self, flag):
+        self.setConfig(kTrueNorth, flag)
+
+    def setOrientation(self, orientation):
+        self.setConfig(kOrientation, orientation)
+
+    def save(self):
+        self._sendMessage(self.kSave, b'')
+        response = self._recvSpecificMessage(self.kSaveDone)
+        (code, ) = self.struct_uint16.unpack(response)
+
+        if code != 0:
+            raise IOError('Save failed with error code {0}.'.format(code))
+
+    def calibrate(self, mode, callback=lambda x: x):
+        payload_mode = self.struct_uint32.pack(mode)
+        self._sendMessage(self.kStartCal, payload_mode)
+
+        # TODO: Verify that this matches the calibration protocol.
+        while True:
+            frame_id, message = self._recvMessage()
+
+            # One UserCalSampCount message is generated for each recorded
+            # sample. This continues until the calibration has converged or the
+            # maximum number of points have been collected.
+            if frame_id == self.kUserCalSampCount:
+                (sample_num, ) = self.struct_uint32.unpack(message)
+                callback(sample_num)
+            elif frame_id == self.kDataResp:
+                pass
+            # Calibration accuracy is reported in a single UserCalScore message
+            # once calibration is complete.
+            elif frame_id == self.kUserCalScore:
+                break
+            else:
+                raise IOError('Response has unexpected frame id: {0}.'.format(frame_id))
+
+        # Parse and return the calibration scores.
+        scores = struct.unpack('>6f', message)
+        return self.CalScores(*scores)
 
 def main():
     with FieldforceTCM('/dev/ttyUSB0') as compass:
         print 'ModInfo:     ', compass.getModInfo()
         print 'Data:        ', compass.getData()
         print 'Declination: ', compass.getConfig(compass.kDeclination)
+
+        print compass.calibrate(compass.kAccelCalibration)
 
 if __name__ == '__main__':
     sys.exit(main())
