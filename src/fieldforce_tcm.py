@@ -209,10 +209,10 @@ class FieldforceTCM:
               2.0737124095482e-3, 1.4823725958818e-3 ]
     }
 
-    def __init__(self, path):
+    def __init__(self, path, baud):
         self.fp = Serial(
             port     = path,
-            baudrate = 38400,
+            baudrate = baud,
             bytesize = serial.EIGHTBITS,
             parity   = serial.PARITY_NONE,
             stopbits = serial.STOPBITS_ONE
@@ -401,7 +401,7 @@ class FieldforceTCM:
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
-    def startStreaming(self, freq):
+    def startStreaming(self):
         """
         Start streaming data. See setAcquisitionParams() for more information
         and use stopStreaming() when done. Streaming must be stopped before any
