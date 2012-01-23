@@ -369,11 +369,11 @@ class FieldforceTCM:
         if code != 0:
             raise IOError('Save failed with error code {0}.'.format(code))
 
-    def calibrate(self, mode, callback=lambda x: x):
+    def startCalibration(self, mode, callback=lambda x: x):
         payload_mode = self.struct_uint32.pack(mode)
         self._sendMessage(self.kStartCal, payload_mode)
 
-        # TODO: Verify that this matches the calibration protocol.
+    def getCalibrationStatus(self):
         while True:
             frame_id, message = self._recvMessage()
 
@@ -382,19 +382,19 @@ class FieldforceTCM:
             # maximum number of points have been collected.
             if frame_id == self.kUserCalSampCount:
                 (sample_num, ) = self.struct_uint32.unpack(message)
-                callback(sample_num)
-            elif frame_id == self.kDataResp:
-                pass
+                return (False, sample_num)
             # Calibration accuracy is reported in a single UserCalScore message
             # once calibration is complete.
             elif frame_id == self.kUserCalScore:
-                break
+                scores_raw = struct.unpack('>6f', message)
+                scores     = self.CalScores(*scores_raw)
+                return (True, scores)
+            # Ignore data updates
+            elif frame_id == self.kDataResp:
+                continue
             else:
-                raise IOError('Response has unexpected frame id: {0}.'.format(frame_id))
-
-        # Parse and return the calibration scores.
-        scores = struct.unpack('>6f', message)
-        return self.CalScores(*scores)
+                raise IOError('Response has unexpected frame id: {0}.'
+                              .format(frame_id))
 
 def main():
     compass = FieldforceTCM('/dev/ttyUSB0')
