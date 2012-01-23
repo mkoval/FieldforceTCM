@@ -27,15 +27,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
 from fieldforce_tcm import Calibration, Component, Configuration,  FieldforceTCM, Orientation
-from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Quaternion, QuaternionStamped
+from std_msgs.msg import Header
 from tf import transformations
 
 def main():
     rospy.init_node('fieldforce_tcm')
-    pub_angle = rospy.Publisher('orientation', Quaternion)
+    pub_angle = rospy.Publisher('orientation', QuaternionStamped)
 
-    path = rospy.get_param('~path', '/dev/ttyUSB0')
-    baud = rospy.get_param('~baud', 38400)
+    path  = rospy.get_param('~path', '/dev/ttyUSB0')
+    baud  = rospy.get_param('~baud', 38400)
+    frame = rospy.get_param('~frame_id', 'frame')
 
     compass = FieldforceTCM(path, baud)
     compass.setDataComponents([
@@ -53,6 +55,7 @@ def main():
     try:
         while True:
             datum = compass.getData()
+            now   = rospy.get_rostime()
 
             if datum.Distortion and not warn_distortion:
                 rospy.logwarn('Magnometer has exceeded its linear range.')
@@ -64,7 +67,10 @@ def main():
 
             ax, ay, az = (datum.RAngle, datum.PAngle, datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
-            pub_angle.publish(*quaternion)
+            pub_angle.publish(
+                header = Header(stamp=now, frame_id=frame),
+                quaternion = Quaternion(*quaternion)
+            )
     except Exception, e:
         compass.stopStreaming()
         compass.close()
