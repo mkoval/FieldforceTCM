@@ -1,0 +1,12 @@
+<package>
+  <description brief="PNI Fieldforce TCM digital compass driver">
+	Driver for the PNI Fieldforce TCM digital compass that communicates with
+	the compass over RS232 using the PNI binary protocol.
+  </description>
+  <author>Michael Koval</author>
+  <license>BSD</license>
+  <rosdep name="crcmod"/>
+  <rosdep name="pyserial"/>
+  <depend package="geometry_msgs"/>
+  <depend package="rospy"/>
+</package>

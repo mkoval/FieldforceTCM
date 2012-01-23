@@ -1,0 +1,3 @@
+crcmod:
+	ubuntu: |
+		pip install crcmod
