@@ -133,6 +133,40 @@ class FieldforceTCM:
     kOrientationZDOWN180 = 15
     kOrientationZDOWN270 = 16
 
+    fir_defaults = {
+        0:  [ ],
+        4:  [ 4.6708657655334e-2, 4.5329134234467e-1,
+              4.5329134234467e-1, 4.6708657655334e-2 ],
+        8:  [ 1.9875512449729e-2, 6.4500864832660e-2,
+              1.6637325898141e-1, 2.4925036373620e-1,
+              2.4925036373620e-1, 1.6637325898141e-1,
+              6.4500864832660e-2, 1.9875512449729e-2 ],
+        16: [ 7.9724971069144e-3, 1.2710056429342e-2,
+              2.5971390034516e-2, 4.6451949792704e-2,
+              7.1024151197772e-2, 9.5354386848804e-2,
+              1.1484431942626e-1, 1.2567124916369e-1,
+              1.2567124916369e-1, 1.1484431942626e-1,
+              9.5354386848804e-2, 7.1024151197772e-2,
+              4.6451949792704e-2, 2.5971390034516e-2,
+              1.2710056429342e-2, 7.9724971069144e-3 ],
+        32: [ 1.4823725958818e-3, 2.0737124095482e-3,
+              3.2757326624196e-3, 5.3097803863757e-3,
+              8.3414139286254e-3, 1.2456836057785e-2,
+              1.7646051430536e-2, 2.3794805168613e-2,
+              3.0686505921968e-2, 3.8014333463472e-2,
+              4.5402682509802e-2, 5.2436112653103e-2,
+              5.8693165018301e-2, 6.3781858267530e-2,
+              6.7373451424187e-2, 6.9231186101853e-2,
+              6.9231186101853e-2, 6.7373451424187e-2,
+              6.3781858267530e-2, 5.8693165018301e-2,
+              5.2436112653103e-2, 4.5402682509802e-2,
+              3.8014333463472e-2, 3.0686505921968e-2,
+              2.3794805168613e-2, 1.7646051430536e-2,
+              1.2456836057785e-2, 8.3414139286254e-3,
+              5.3097803863757e-3, 3.2757326624196e-3,
+              2.0737124095482e-3, 1.4823725958818e-3 ]
+    }
+
     def __init__(self, path):
         self.fp = Serial(
             port     = path,
@@ -150,10 +184,6 @@ class FieldforceTCM:
 
     def _send(self, fmt):
         self.fp.write(fmt)
-
-    def _sendStruct(self, fmt, *args):
-        data = fmt.pack(*args)
-        self.fp.write(data)
 
     def _recv(self, fmt):
         struct_fmt = fmt if type(fmt) == Struct else Struct(fmt)
@@ -240,6 +270,34 @@ class FieldforceTCM:
             raise IOError('Response has unexpected configuration id: {0}.'
                            .format(response_id))
 
+    def setFilter(self, count, values=None):
+        assert count in [ 0, 4, 8, 16, 32 ]
+
+        if values == None:
+            values = self.fir_defaults[count]
+        else:
+            assert len(values) == count
+
+        payload = struct.pack('>BBB{0}d'.format(count), 3, 1, count, *values)
+        self._sendMessage(self.kSetParam, payload)
+        self._recvSpecificMessage(self.kSetParamDone)
+
+    def getFilter(self):
+        payload_request  = struct.pack('>BB', 3, 1)
+        self._sendMessage(self.kGetParam, payload_request)
+
+        payload_response = self._recvSpecificMessage(self.kParamResp)
+        param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
+
+        if param_id != 3:
+            raise IOError('Expected param ID of 3, got {}'.format(param_id))
+        elif axis_id != 1:
+            raise IOError('Expected axis ID of 1, got {}'.format(axis_id))
+
+        fir = struct.unpack('>{0}d'.format(count), payload_response[3:])
+        return list(fir)
+
+
     def setDeclination(self, declination):
         assert -180.0 <= declination <= +180.0
         self.setConfig(self.kDeclination, declination)
@@ -314,10 +372,13 @@ class FieldforceTCM:
 
 def main():
     compass = FieldforceTCM('/dev/ttyUSB0')
-    print 'ModInfo:     ', compass.getModInfo()
-    print 'Data:        ', compass.getData()
-    print 'Declination: ', compass.getConfig(compass.kDeclination)
-    print 'Params',        compass.getAcquisitionParams()
+    print 'ModInfo:',     compass.getModInfo()
+    print 'Data:',        compass.getData()
+    print 'Declination:', compass.getConfig(compass.kDeclination)
+    print 'Params:',      compass.getAcquisitionParams()
+
+    compass.setFilter(32)
+    print 'Filter:',      compass.getFilter()
 
     compass.setAcquisitionParams(True, False, 0.0, 0.1)
     compass.startStreaming(10.0)
