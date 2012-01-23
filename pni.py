@@ -78,6 +78,18 @@ class FieldforceTCM:
         28: Component('YAligned',    struct_float32),
         29: Component('ZAligned',    struct_float32)
     }
+    kHeading     = 5
+    kTemperature = 7
+    kDistortion  = 8
+    kCalStatus   = 9
+    kPAligned    = 21
+    kRAligned    = 22
+    kIZAligned   = 23
+    kPAngle      = 24
+    kRAngle      = 25
+    kXAligned    = 27
+    kYAligned    = 28
+    kZAligned    = 29
 
     # Config IDs
     config = {
@@ -223,7 +235,7 @@ class FieldforceTCM:
                 data[component] = None
         return self.Datum(**data)
 
-    def getModInfo(self):
+    def getModelInfo(self):
         self._sendMessage(self.kGetModInfo, b'')
         payload = self._recvSpecificMessage(self.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
@@ -290,13 +302,12 @@ class FieldforceTCM:
         param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
 
         if param_id != 3:
-            raise IOError('Expected param ID of 3, got {}'.format(param_id))
+            raise IOError('Expected param ID of 3, got {0}'.format(param_id))
         elif axis_id != 1:
-            raise IOError('Expected axis ID of 1, got {}'.format(axis_id))
+            raise IOError('Expected axis ID of 1, got {0}'.format(axis_id))
 
         fir = struct.unpack('>{0}d'.format(count), payload_response[3:])
         return list(fir)
-
 
     def setDeclination(self, declination):
         assert -180.0 <= declination <= +180.0
@@ -317,6 +328,13 @@ class FieldforceTCM:
     def getOrientation(self):
         return self.getConfig(self.kOrientation)
 
+    def setDataComponents(self, components):
+        count = len(components)
+        payload_counts  = struct.pack('>B', count)
+        payload_content = struct.pack('>{0}B'.format(count), *components)
+        payload = payload_counts + payload_content
+        self._sendMessage(self.kSetDataComponents, payload)
+
     def setAcquisitionParams(self, mode, flush_filter, acq_time, resp_time):
         payload = struct.pack('>BBff', mode, flush_filter, acq_time, resp_time)
         self._sendMessage(self.kSetAcqParams, payload)
@@ -334,6 +352,14 @@ class FieldforceTCM:
     def stopStreaming(self):
         self._sendMessage(self.kStopIntervalMode, b'')
         self.fp.flushInput()
+
+    def powerUp(self):
+        self._send(b'\xFF')
+        self._recvSpecificMessage(self.kPowerUp)
+
+    def powerDown(self):
+        self._sendMessage(self.kPowerDown, b'')
+        self._recvSpecificMessage(self.kPowerDownDone)
 
     def save(self):
         self._sendMessage(self.kSave, b'')
@@ -372,7 +398,7 @@ class FieldforceTCM:
 
 def main():
     compass = FieldforceTCM('/dev/ttyUSB0')
-    print 'ModInfo:',     compass.getModInfo()
+    print 'ModelInfo:',   compass.getModelInfo()
     print 'Data:',        compass.getData()
     print 'Declination:', compass.getConfig(compass.kDeclination)
     print 'Params:',      compass.getAcquisitionParams()
@@ -380,6 +406,7 @@ def main():
     compass.setFilter(32)
     print 'Filter:',      compass.getFilter()
 
+    compass.setDataComponents([ compass.kHeading ])
     compass.setAcquisitionParams(True, False, 0.0, 0.1)
     compass.startStreaming(10.0)
 
@@ -387,9 +414,7 @@ def main():
         print compass.getData()
 
     compass.stopStreaming()
-
     compass.close()
-    #print compass.calibrate(compass.kAccelCalibration)
 
 if __name__ == '__main__':
     sys.exit(main())
