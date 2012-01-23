@@ -26,6 +26,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
+import math
+
 from fieldforce_tcm import Calibration, Component, Configuration,  FieldforceTCM, Orientation
 from geometry_msgs.msg import Quaternion, QuaternionStamped
 from std_msgs.msg import Header
@@ -65,7 +67,9 @@ def main():
                 rospy.logwarn('Compass is not calibrated.')
                 warn_calibration = True
 
-            ax, ay, az = (datum.RAngle, datum.PAngle, datum.Heading)
+            ax = math.radians(datum.RAngle)
+            ay = math.radians(datum.PAngle)
+            az = math.radians(datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
             pub_angle.publish(
                 header = Header(stamp=now, frame_id=frame),
