@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import collections, crcmod, serial, struct, sys
+from bidict import bidict
 from collections import namedtuple
 from serial import Serial
 from struct import Struct
@@ -10,6 +11,13 @@ class FieldforceTCM:
     ModInfo   = namedtuple('ModInfo', [ 'Type', 'Revision' ])
     CalScores = namedtuple('CalScores', [ 'CalScore', 'CalParam2', 'AccelCalScore',
                                           'DistError', 'TiltError', 'TiltRange' ])
+    AcqParams = namedtuple('AcqParams', [ 'PollingMode', 'FlushFilter',
+                                          'SensorAcqTime', 'IntervalRespTime' ])
+    Datum = namedtuple('Datum', [ 'Heading', 'Temperature', 'Distortion',
+                                  'CalStatus',
+                                  'PAligned', 'RAligned', 'IZAligned',
+                                  'PAngle', 'RAngle',
+                                  'KXAligned', 'KYAligned', 'KZAligned' ])
 
     struct_uint8   = Struct('>B')
     struct_uint16  = Struct('>H')
@@ -18,30 +26,42 @@ class FieldforceTCM:
     struct_boolean = Struct('>?')
 
     # Frame IDs
-    kGetModInfo        = 1
-    kModInfoResp       = 2
-    kSetDataComponents = 3
-    kGetData           = 4
-    kDataResp          = 5
-    kSetConfig         = 6
-    kGetConfig         = 7
-    kConfigResp        = 8
-    kSave              = 9
-    kStartCal          = 10
-    kStopCal           = 11
-    kSetParam          = 12
-    kGetParam          = 13
-    kParamResp         = 14
-    kPowerDown         = 15
-    kSaveDone          = 16
-    kUserCalSampCount  = 17
-    kUserCalScore      = 18
-    kSetConfigDone     = 19
-    kSetParamDone      = 20
-    kStartIntervalMode = 21
-    kStopIntervalMode  = 22
-    kPowerUp           = 23
-    kSetAcqParams      = 24
+    kGetModInfo         = 1
+    kModInfoResp        = 2
+    kSetDataComponents  = 3
+    kGetData            = 4
+    kDataResp           = 5
+    kSetConfig          = 6
+    kGetConfig          = 7
+    kConfigResp         = 8
+    kSave               = 9
+    kStartCal           = 10
+    kStopCal            = 11
+    kSetParam           = 12
+    kGetParam           = 13
+    kParamResp          = 14
+    kPowerDown          = 15
+    kSaveDone           = 16
+    kUserCalSampCount   = 17
+    kUserCalScore       = 18
+    kSetConfigDone      = 19
+    kSetParamDone       = 20
+    kStartIntervalMode  = 21
+    kStopIntervalMode   = 22
+    kPowerUp            = 23
+    kSetAcqParams       = 24
+    kGetAcqParams       = 25
+    kAcqParamsDone      = 26
+    kAcqParamsResp      = 27
+    kPowerDownDone      = 28
+    kFactoryUserCal     = 29
+    kFactorUserCalDone  = 30
+    kTakeUserCalSample  = 31
+    kFactoryInclCal     = 36
+    kFactoryInclCalDone = 37
+    kSetMode            = 46
+    kSetModeResp        = 47
+    kSyncRead           = 49
 
     # Component IDs
     components = {
@@ -60,18 +80,6 @@ class FieldforceTCM:
     }
 
     # Config IDs
-    kDeclination         = 1
-    kTrueNorth           = 2
-    kBigEndian           = 6
-    kMountingRef         = 10
-    kUserCalNumPoints    = 12
-    kUserCalAutoSampling = 13
-    kBaudRate            = 14
-    kMilOutput           = 15
-    kDataCal             = 16
-    kCoeffCopySet        = 18
-    kAccelCoeffCopySet   = 19
-
     config = {
         1:  Component('Declination',         struct_float32),
         2:  Component('TrueNorth',           struct_boolean),
@@ -85,6 +93,19 @@ class FieldforceTCM:
         18: Component('CoeffCopySet',        struct_uint32),
         19: Component('AccelCoeffCopySet',   struct_uint32)
     }
+
+    # Config IDs
+    kDeclination         = 1
+    kTrueNorth           = 2
+    kBigEndian           = 6
+    kMountingRef         = 10
+    kUserCalNumPoints    = 12
+    kUserCalAutoSampling = 13
+    kBaudRate            = 14
+    kMilOutput           = 15
+    kDataCal             = 16
+    kCoeffCopySet        = 18
+    kAccelCoeffCopySet   = 19
 
     # Calibration Modes
     kFullRangeCalibration     = 10
@@ -123,14 +144,8 @@ class FieldforceTCM:
         # CRC-16 with generator polynomial X^16 + X^12 + X^5 + 1.
         self.crc = crcmod.mkCrcFun(0b10001000000100001, 0, False)
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self.close()
-        return False
-
     def close(self):
+        self.fp.flush()
         self.fp.close()
 
     def _send(self, fmt):
@@ -170,8 +185,13 @@ class FieldforceTCM:
         if frame_id == expected_frame_id:
             return data
         else:
-            raise IOError('Response has unexpected frame id: {0}.'
-                          .format(frame_id))
+            raise IOError('Response has unexpected frame id: {0}.'.format(frame_id))
+
+    def _createDatum(self, data):
+        for component in self.Datum._fields:
+            if component not in data.keys():
+                data[component] = None
+        return self.Datum(**data)
 
     def getModInfo(self):
         self._sendMessage(self.kGetModInfo, b'')
@@ -198,7 +218,7 @@ class FieldforceTCM:
             offset     += 1 + component.struct.size
             comp_index += 1
 
-        return data
+        return self._createDatum(data)
 
     def setConfig(self, config_id, value):
         payload_id    = self.struct_uint8.pack(config_id)
@@ -222,13 +242,40 @@ class FieldforceTCM:
 
     def setDeclination(self, declination):
         assert -180.0 <= declination <= +180.0
-        self.setConfig(kDeclination, declination)
+        self.setConfig(self.kDeclination, declination)
+
+    def getDeclination(self):
+        return self.getConfig(self.kDeclination)
 
     def setTrueNorth(self, flag):
-        self.setConfig(kTrueNorth, flag)
+        self.setConfig(self.kTrueNorth, flag)
+
+    def getTrueNorth(self):
+        return self.getConfig(self.kTrueNorth)
 
     def setOrientation(self, orientation):
-        self.setConfig(kOrientation, orientation)
+        self.setConfig(self.kOrientation, orientation)
+
+    def getOrientation(self):
+        return self.getConfig(self.kOrientation)
+
+    def setAcquisitionParams(self, mode, flush_filter, acq_time, resp_time):
+        payload = struct.pack('>BBff', mode, flush_filter, acq_time, resp_time)
+        self._sendMessage(self.kSetAcqParams, payload)
+        self._recvSpecificMessage(self.kAcqParamsDone)
+
+    def getAcquisitionParams(self):
+        self._sendMessage(self.kGetAcqParams, b"")
+        payload  = self._recvSpecificMessage(self.kAcqParamsResp)
+        response = struct.unpack('>BBff', payload)
+        return self.AcqParams(*response)
+
+    def startStreaming(self, freq):
+        self._sendMessage(self.kStartIntervalMode, b'')
+
+    def stopStreaming(self):
+        self._sendMessage(self.kStopIntervalMode, b'')
+        self.fp.flushInput()
 
     def save(self):
         self._sendMessage(self.kSave, b'')
@@ -266,12 +313,22 @@ class FieldforceTCM:
         return self.CalScores(*scores)
 
 def main():
-    with FieldforceTCM('/dev/ttyUSB0') as compass:
-        print 'ModInfo:     ', compass.getModInfo()
-        print 'Data:        ', compass.getData()
-        print 'Declination: ', compass.getConfig(compass.kDeclination)
+    compass = FieldforceTCM('/dev/ttyUSB0')
+    print 'ModInfo:     ', compass.getModInfo()
+    print 'Data:        ', compass.getData()
+    print 'Declination: ', compass.getConfig(compass.kDeclination)
+    print 'Params',        compass.getAcquisitionParams()
 
-        print compass.calibrate(compass.kAccelCalibration)
+    compass.setAcquisitionParams(True, False, 0.0, 0.1)
+    compass.startStreaming(10.0)
+
+    for t in xrange(0, 10):
+        print compass.getData()
+
+    compass.stopStreaming()
+
+    compass.close()
+    #print compass.calibrate(compass.kAccelCalibration)
 
 if __name__ == '__main__':
     sys.exit(main())
