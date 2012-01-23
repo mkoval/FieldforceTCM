@@ -6,26 +6,7 @@ from collections import namedtuple
 from serial import Serial
 from struct import Struct
 
-class FieldforceTCM:
-    Component = namedtuple('Component', [ 'name', 'struct' ])
-    ModInfo   = namedtuple('ModInfo', [ 'Type', 'Revision' ])
-    CalScores = namedtuple('CalScores', [ 'CalScore', 'CalParam2', 'AccelCalScore',
-                                          'DistError', 'TiltError', 'TiltRange' ])
-    AcqParams = namedtuple('AcqParams', [ 'PollingMode', 'FlushFilter',
-                                          'SensorAcqTime', 'IntervalRespTime' ])
-    Datum = namedtuple('Datum', [ 'Heading', 'Temperature', 'Distortion',
-                                  'CalStatus',
-                                  'PAligned', 'RAligned', 'IZAligned',
-                                  'PAngle', 'RAngle',
-                                  'KXAligned', 'KYAligned', 'KZAligned' ])
-
-    struct_uint8   = Struct('>B')
-    struct_uint16  = Struct('>H')
-    struct_uint32  = Struct('>I')
-    struct_float32 = Struct('>f')
-    struct_boolean = Struct('>?')
-
-    # Frame IDs
+class FrameID:
     kGetModInfo         = 1
     kModInfoResp        = 2
     kSetDataComponents  = 3
@@ -63,21 +44,7 @@ class FieldforceTCM:
     kSetModeResp        = 47
     kSyncRead           = 49
 
-    # Component IDs
-    components = {
-        5:  Component('Heading',     struct_float32),
-        7:  Component('Temperature', struct_float32),
-        8:  Component('Distortion',  struct_boolean),
-        9:  Component('CalStatus',   struct_boolean),
-        21: Component('PAligned',    struct_float32),
-        22: Component('RAligned',    struct_float32),
-        23: Component('IZAligned',   struct_float32),
-        24: Component('PAngle',      struct_float32),
-        25: Component('RAngle',      struct_float32),
-        27: Component('XAligned',    struct_float32),
-        28: Component('YAligned',    struct_float32),
-        29: Component('ZAligned',    struct_float32)
-    }
+class Component:
     kHeading     = 5
     kTemperature = 7
     kDistortion  = 8
@@ -91,22 +58,7 @@ class FieldforceTCM:
     kYAligned    = 28
     kZAligned    = 29
 
-    # Config IDs
-    config = {
-        1:  Component('Declination',         struct_float32),
-        2:  Component('TrueNorth',           struct_boolean),
-        6:  Component('BigEndian',           struct_boolean),
-        10: Component('MountingRef',         struct_uint8),
-        12: Component('UserCalNumPoints',    struct_uint32),
-        13: Component('UserCalAutoSampling', struct_boolean),
-        14: Component('BaudRate',            struct_uint8),
-        15: Component('MilOutput',           struct_boolean),
-        16: Component('DataCal',             struct_boolean),
-        18: Component('CoeffCopySet',        struct_uint32),
-        19: Component('AccelCoeffCopySet',   struct_uint32)
-    }
-
-    # Config IDs
+class Configuration:
     kDeclination         = 1
     kTrueNorth           = 2
     kBigEndian           = 6
@@ -119,15 +71,7 @@ class FieldforceTCM:
     kCoeffCopySet        = 18
     kAccelCoeffCopySet   = 19
 
-    # Calibration Modes
-    kFullRangeCalibration     = 10
-    k2DCalibration            = 20
-    kHardIronCalibration      = 30
-    kLimitedTiltCalibraion    = 40
-    kAccelCalibration         = 100
-    kAccelMagneticCalibration = 110
-
-    # Orientations
+class Orientation:
     kOrientationSTD0     = 1
     kOrientationXUP0     = 2
     kOrientationYUP0     = 3
@@ -144,6 +88,69 @@ class FieldforceTCM:
     kOrientationZDOWN90  = 14
     kOrientationZDOWN180 = 15
     kOrientationZDOWN270 = 16
+
+class Calibration:
+    kFullRangeCalibration     = 10
+    k2DCalibration            = 20
+    kHardIronCalibration      = 30
+    kLimitedTiltCalibraion    = 40
+    kAccelCalibration         = 100
+    kAccelMagneticCalibration = 110
+
+class FieldforceTCM:
+    Component = namedtuple('Component', [
+        'name', 'struct'
+    ])
+    ModInfo   = namedtuple('ModInfo', [
+        'Type', 'Revision'
+    ])
+    CalScores = namedtuple('CalScores', [
+        'CalScore', 'CalParam2', 'AccelCalScore', 'DistError',
+        'TiltError', 'TiltRange'
+    ])
+    AcqParams = namedtuple('AcqParams', [
+        'PollingMode', 'FlushFilter', 'SensorAcqTime', 'IntervalRespTime'
+    ])
+    Datum     = namedtuple('Datum', [
+        'Heading', 'Temperature', 'Distortion', 'CalStatus',
+        'PAligned', 'RAligned', 'IZAligned',
+        'PAngle', 'RAngle', 'KXAligned', 'KYAligned', 'KZAligned'
+    ])
+
+    struct_uint8   = Struct('>B')
+    struct_uint16  = Struct('>H')
+    struct_uint32  = Struct('>I')
+    struct_float32 = Struct('>f')
+    struct_boolean = Struct('>?')
+
+    components = {
+        5:  Component('Heading',     struct_float32),
+        7:  Component('Temperature', struct_float32),
+        8:  Component('Distortion',  struct_boolean),
+        9:  Component('CalStatus',   struct_boolean),
+        21: Component('PAligned',    struct_float32),
+        22: Component('RAligned',    struct_float32),
+        23: Component('IZAligned',   struct_float32),
+        24: Component('PAngle',      struct_float32),
+        25: Component('RAngle',      struct_float32),
+        27: Component('XAligned',    struct_float32),
+        28: Component('YAligned',    struct_float32),
+        29: Component('ZAligned',    struct_float32)
+    }
+
+    config = {
+        1:  Component('Declination',         struct_float32),
+        2:  Component('TrueNorth',           struct_boolean),
+        6:  Component('BigEndian',           struct_boolean),
+        10: Component('MountingRef',         struct_uint8),
+        12: Component('UserCalNumPoints',    struct_uint32),
+        13: Component('UserCalAutoSampling', struct_boolean),
+        14: Component('BaudRate',            struct_uint8),
+        15: Component('MilOutput',           struct_boolean),
+        16: Component('DataCal',             struct_boolean),
+        18: Component('CoeffCopySet',        struct_uint32),
+        19: Component('AccelCoeffCopySet',   struct_uint32)
+    }
 
     fir_defaults = {
         0:  [ ],
@@ -236,13 +243,13 @@ class FieldforceTCM:
         return self.Datum(**data)
 
     def getModelInfo(self):
-        self._sendMessage(self.kGetModInfo, b'')
-        payload = self._recvSpecificMessage(self.kModInfoResp)
+        self._sendMessage(FrameID.kGetModInfo, b'')
+        payload = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
 
     def getData(self):
-        self._sendMessage(self.kGetData, b'')
-        payload = self._recvSpecificMessage(self.kDataResp)
+        self._sendMessage(FrameID.kGetData, b'')
+        payload = self._recvSpecificMessage(FrameID.kDataResp)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
         comp_index = 0
@@ -265,14 +272,14 @@ class FieldforceTCM:
     def setConfig(self, config_id, value):
         payload_id    = self.struct_uint8.pack(config_id)
         payload_value = self.config[config_id].struct.pack(value)
-        self._sendMessage(self.kSetConfig, payload_id + payload_value)
-        self._recvSpecificMessage(self.kSetConfigDone)
+        self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
+        self._recvSpecificMessage(FrameID.kSetConfigDone)
 
     def getConfig(self, config_id):
         payload_id = self.struct_uint8.pack(config_id)
-        self._sendMessage(self.kGetConfig, payload_id)
+        self._sendMessage(FrameID.kGetConfig, payload_id)
 
-        response = self._recvSpecificMessage(self.kConfigResp)
+        response = self._recvSpecificMessage(FrameID.kConfigResp)
         (response_id, ) = self.struct_uint8.unpack(response[0])
 
         if response_id == config_id:
@@ -291,14 +298,14 @@ class FieldforceTCM:
             assert len(values) == count
 
         payload = struct.pack('>BBB{0}d'.format(count), 3, 1, count, *values)
-        self._sendMessage(self.kSetParam, payload)
-        self._recvSpecificMessage(self.kSetParamDone)
+        self._sendMessage(FrameID.kSetParam, payload)
+        self._recvSpecificMessage(FrameID.kSetParamDone)
 
     def getFilter(self):
         payload_request  = struct.pack('>BB', 3, 1)
-        self._sendMessage(self.kGetParam, payload_request)
+        self._sendMessage(FrameID.kGetParam, payload_request)
 
-        payload_response = self._recvSpecificMessage(self.kParamResp)
+        payload_response = self._recvSpecificMessage(FrameID.kParamResp)
         param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
 
         if param_id != 3:
@@ -309,61 +316,42 @@ class FieldforceTCM:
         fir = struct.unpack('>{0}d'.format(count), payload_response[3:])
         return list(fir)
 
-    def setDeclination(self, declination):
-        assert -180.0 <= declination <= +180.0
-        self.setConfig(self.kDeclination, declination)
-
-    def getDeclination(self):
-        return self.getConfig(self.kDeclination)
-
-    def setTrueNorth(self, flag):
-        self.setConfig(self.kTrueNorth, flag)
-
-    def getTrueNorth(self):
-        return self.getConfig(self.kTrueNorth)
-
-    def setOrientation(self, orientation):
-        self.setConfig(self.kOrientation, orientation)
-
-    def getOrientation(self):
-        return self.getConfig(self.kOrientation)
-
     def setDataComponents(self, components):
         count = len(components)
         payload_counts  = struct.pack('>B', count)
         payload_content = struct.pack('>{0}B'.format(count), *components)
         payload = payload_counts + payload_content
-        self._sendMessage(self.kSetDataComponents, payload)
+        self._sendMessage(FrameID.kSetDataComponents, payload)
 
     def setAcquisitionParams(self, mode, flush_filter, acq_time, resp_time):
         payload = struct.pack('>BBff', mode, flush_filter, acq_time, resp_time)
-        self._sendMessage(self.kSetAcqParams, payload)
-        self._recvSpecificMessage(self.kAcqParamsDone)
+        self._sendMessage(FrameID.kSetAcqParams, payload)
+        self._recvSpecificMessage(FrameID.kAcqParamsDone)
 
     def getAcquisitionParams(self):
-        self._sendMessage(self.kGetAcqParams, b"")
-        payload  = self._recvSpecificMessage(self.kAcqParamsResp)
+        self._sendMessage(FrameID.kGetAcqParams, b"")
+        payload  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
     def startStreaming(self, freq):
-        self._sendMessage(self.kStartIntervalMode, b'')
+        self._sendMessage(FrameID.kStartIntervalMode, b'')
 
     def stopStreaming(self):
-        self._sendMessage(self.kStopIntervalMode, b'')
+        self._sendMessage(FrameID.kStopIntervalMode, b'')
         self.fp.flushInput()
 
     def powerUp(self):
         self._send(b'\xFF')
-        self._recvSpecificMessage(self.kPowerUp)
+        self._recvSpecificMessage(FrameID.kPowerUp)
 
     def powerDown(self):
-        self._sendMessage(self.kPowerDown, b'')
-        self._recvSpecificMessage(self.kPowerDownDone)
+        self._sendMessage(FrameID.kPowerDown, b'')
+        self._recvSpecificMessage(FrameID.kPowerDownDone)
 
     def save(self):
-        self._sendMessage(self.kSave, b'')
-        response = self._recvSpecificMessage(self.kSaveDone)
+        self._sendMessage(FrameID.kSave, b'')
+        response = self._recvSpecificMessage(FrameID.kSaveDone)
         (code, ) = self.struct_uint16.unpack(response)
 
         if code != 0:
@@ -371,7 +359,7 @@ class FieldforceTCM:
 
     def startCalibration(self, mode, callback=lambda x: x):
         payload_mode = self.struct_uint32.pack(mode)
-        self._sendMessage(self.kStartCal, payload_mode)
+        self._sendMessage(FrameID.kStartCal, payload_mode)
 
     def getCalibrationStatus(self):
         while True:
@@ -380,17 +368,17 @@ class FieldforceTCM:
             # One UserCalSampCount message is generated for each recorded
             # sample. This continues until the calibration has converged or the
             # maximum number of points have been collected.
-            if frame_id == self.kUserCalSampCount:
+            if frame_id == FrameID.kUserCalSampCount:
                 (sample_num, ) = self.struct_uint32.unpack(message)
                 return (False, sample_num)
             # Calibration accuracy is reported in a single UserCalScore message
             # once calibration is complete.
-            elif frame_id == self.kUserCalScore:
+            elif frame_id == FrameID.kUserCalScore:
                 scores_raw = struct.unpack('>6f', message)
                 scores     = self.CalScores(*scores_raw)
                 return (True, scores)
             # Ignore data updates
-            elif frame_id == self.kDataResp:
+            elif frame_id == FrameID.kDataResp:
                 continue
             else:
                 raise IOError('Response has unexpected frame id: {0}.'
@@ -400,13 +388,12 @@ def main():
     compass = FieldforceTCM('/dev/ttyUSB0')
     print 'ModelInfo:',   compass.getModelInfo()
     print 'Data:',        compass.getData()
-    print 'Declination:', compass.getConfig(compass.kDeclination)
     print 'Params:',      compass.getAcquisitionParams()
 
     compass.setFilter(32)
     print 'Filter:',      compass.getFilter()
 
-    compass.setDataComponents([ compass.kHeading ])
+    compass.setDataComponents([ Component.kHeading ])
     compass.setAcquisitionParams(True, False, 0.0, 0.1)
     compass.startStreaming(10.0)
 
