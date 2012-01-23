@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import collections, crcmod, serial, struct, sys
-from bidict import bidict
 from collections import namedtuple
 from serial import Serial
 from struct import Struct
@@ -243,11 +242,18 @@ class FieldforceTCM:
         return self.Datum(**data)
 
     def getModelInfo(self):
+        """
+        Query the module's type and firmware revision number.
+        """
         self._sendMessage(FrameID.kGetModInfo, b'')
         payload = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
 
     def getData(self):
+        """
+        Query a single packet of data that containing the components specified
+        by setDataComponents(). All other components are set to zero.
+        """
         self._sendMessage(FrameID.kGetData, b'')
         payload = self._recvSpecificMessage(FrameID.kDataResp)
 
@@ -270,12 +276,20 @@ class FieldforceTCM:
         return self._createDatum(data)
 
     def setConfig(self, config_id, value):
+        """
+        Sets a single configuration value based on the config_id, which must be
+        one of the values in Configuration. Acceptable values deend upon the
+        configuration option being set.
+        """
         payload_id    = self.struct_uint8.pack(config_id)
         payload_value = self.config[config_id].struct.pack(value)
         self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
         self._recvSpecificMessage(FrameID.kSetConfigDone)
 
     def getConfig(self, config_id):
+        """
+        Get the value of a single configuration value based on config_id.
+        """
         payload_id = self.struct_uint8.pack(config_id)
         self._sendMessage(FrameID.kGetConfig, payload_id)
 
@@ -290,6 +304,13 @@ class FieldforceTCM:
                            .format(response_id))
 
     def setFilter(self, count, values=None):
+        """
+        Configure the number of taps and weights of the on-board finite impulse
+        response (FIR) filter. The number of taps must be zero (i.e. disabled),
+        4, 8, 16, or 32. If values is omitted or is set to None, the weights
+        default to PNI's recommended values. See the Fieldforce TCM User Manual
+        for details.
+        """
         assert count in [ 0, 4, 8, 16, 32 ]
 
         if values == None:
@@ -302,6 +323,10 @@ class FieldforceTCM:
         self._recvSpecificMessage(FrameID.kSetParamDone)
 
     def getFilter(self):
+        """
+        Gets the current finite impulse response (FIR) filter weights. See
+        setFilter() for more information.
+        """
         payload_request  = struct.pack('>BB', 3, 1)
         self._sendMessage(FrameID.kGetParam, payload_request)
 
@@ -317,6 +342,11 @@ class FieldforceTCM:
         return list(fir)
 
     def setDataComponents(self, components):
+        """
+        Specify which data components, specified as a list of component IDs,
+        will be returned with each sample. An arbitrary number of IDs is
+        supported.
+        """
         count = len(components)
         payload_counts  = struct.pack('>B', count)
         payload_content = struct.pack('>{0}B'.format(count), *components)
@@ -324,32 +354,67 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kSetDataComponents, payload)
 
     def setAcquisitionParams(self, mode, flush_filter, acq_time, resp_time):
+        """
+        Set the acquisition mode, including:
+         - PollingMode: poll if true, push if false
+         - FlushFilter: flush the FIR filter registers after each sample
+         - SensorAcqTime: time between sample in seconds
+         - IntervalRespTime: time delay between sending subsequent samples
+        Even if polling is enabled here, it must be explicitly started using
+        startStreaming().
+        """
         payload = struct.pack('>BBff', mode, flush_filter, acq_time, resp_time)
         self._sendMessage(FrameID.kSetAcqParams, payload)
         self._recvSpecificMessage(FrameID.kAcqParamsDone)
 
     def getAcquisitionParams(self):
+        """
+        Gets the current acquisition mode. See setAcquisitionParams() for more
+        information.
+        """
         self._sendMessage(FrameID.kGetAcqParams, b"")
         payload  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
     def startStreaming(self, freq):
+        """
+        Start streaming data. See setAcquisitionParams() for more information
+        and use stopStreaming() when done. Streaming must be stopped before any
+        other commands can be used.
+        """
         self._sendMessage(FrameID.kStartIntervalMode, b'')
 
     def stopStreaming(self):
+        """
+        Stops streaming data; companion of startStreaming(). Streaming must be
+        stopped before any other commands can be used.
+        """
         self._sendMessage(FrameID.kStopIntervalMode, b'')
         self.fp.flushInput()
 
     def powerUp(self):
+        """
+        Power up the sensor after a powerDown(). This has undefined results if
+        the sensor is already powered on.
+        """
         self._send(b'\xFF')
         self._recvSpecificMessage(FrameID.kPowerUp)
 
     def powerDown(self):
+        """
+        Power down the sensor down.
+        """
         self._sendMessage(FrameID.kPowerDown, b'')
         self._recvSpecificMessage(FrameID.kPowerDownDone)
 
     def save(self):
+        """
+        Write the current configuration to non-volatile memory. Note that this
+        is the only command that writes to non-volatile memory, so it should be
+        paired with any configuration options (e.g. calibration) that are
+        intended to be persistant.
+        """
         self._sendMessage(FrameID.kSave, b'')
         response = self._recvSpecificMessage(FrameID.kSaveDone)
         (code, ) = self.struct_uint16.unpack(response)
@@ -357,11 +422,20 @@ class FieldforceTCM:
         if code != 0:
             raise IOError('Save failed with error code {0}.'.format(code))
 
-    def startCalibration(self, mode, callback=lambda x: x):
+    def startCalibration(self, mode):
+        """
+        Starts calibration. See the FieldForce TCM User Manual for details
+        about the necessary setup for each calibration mode.
+        """
         payload_mode = self.struct_uint32.pack(mode)
         self._sendMessage(FrameID.kStartCal, payload_mode)
 
     def getCalibrationStatus(self):
+        """
+        Blocks waiting for a calibration update from the sensor. This returns a
+        tuple where the first elements is a boolean that indicates whether the
+        calibration is complete.
+        """
         while True:
             frame_id, message = self._recvMessage()
 
@@ -381,8 +455,7 @@ class FieldforceTCM:
             elif frame_id == FrameID.kDataResp:
                 continue
             else:
-                raise IOError('Response has unexpected frame id: {0}.'
-                              .format(frame_id))
+                raise IOError('Unexpected frame id: {0}.'.format(frame_id))
 
 def main():
     compass = FieldforceTCM('/dev/ttyUSB0')
