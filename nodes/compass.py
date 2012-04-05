@@ -28,18 +28,27 @@ import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
 import math
 
-from fieldforce_tcm import Calibration, Component, Configuration,  FieldforceTCM, Orientation
-from geometry_msgs.msg import Quaternion, QuaternionStamped
+from fieldforce_tcm import Calibration, Component, Configuration, FieldforceTCM, Orientation
+from geometry_msgs.msg import Quaternion, Vector3
 from std_msgs.msg import Header
+from sensor_msgs.msg import Imu
 from tf import transformations
+
+inf = float('+inf')
+var = 0.034906585 ** 2
 
 def main():
     rospy.init_node('fieldforce_tcm')
-    pub_angle = rospy.Publisher('orientation', QuaternionStamped)
+    pub = rospy.Publisher('compass', Imu)
 
     path  = rospy.get_param('~path', '/dev/ttyUSB0')
     baud  = rospy.get_param('~baud', 38400)
-    frame = rospy.get_param('~frame_id', 'frame')
+    frame = rospy.get_param('~frame_id', '/base_link')
+    cov   = rospy.get_param('~covariance', [
+        inf, 0.0, 0.0,
+        0.0, inf, 0.0,
+        0.0, 0.0, var
+    ])
 
     compass = FieldforceTCM(path, baud)
     compass.setDataComponents([
@@ -53,6 +62,7 @@ def main():
 
     warn_distortion  = False
     warn_calibration = False
+
 
     try:
         while True:
@@ -71,9 +81,16 @@ def main():
             ay = math.radians(datum.PAngle)
             az = math.radians(datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
-            pub_angle.publish(
+
+            pub.publish(
                 header = Header(stamp=now, frame_id=frame),
-                quaternion = Quaternion(*quaternion)
+                orientation            = Quaternion(*quaternion),
+                orientation_covariance = [ 0.0 ] * 9,
+                angular_velocity            = Vector3(0, 0, 0),
+                angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
+                linear_acceleration            = Vector3(0, 0, 0),
+                linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
+
             )
     except Exception, e:
         compass.stopStreaming()
