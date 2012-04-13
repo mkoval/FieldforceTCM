@@ -26,21 +26,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
-from geometry_msgs.msg import PoseStamped, Point, Pose, QuaternionStamped
+from sensor_msgs.msg import Imu
+from geometry_msgs.msg import PoseStamped, Point, Pose
 
-def republish(orientation):
+def republish(imu):
     pub.publish(
-        header = orientation.header,
+        header = imu.header,
         pose   = Pose(
             position = Point(0.0, 0.0, 0.0),
-            orientation = orientation.quaternion
+            orientation = imu.orientation
         )
     )
 
 def main():
     global sub, pub
     rospy.init_node('visualize')
-    sub = rospy.Subscriber('orientation', QuaternionStamped, republish)
+    sub = rospy.Subscriber('compass', Imu, republish)
     pub = rospy.Publisher('pose', PoseStamped)
     rospy.spin()
 
