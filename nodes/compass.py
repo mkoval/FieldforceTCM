@@ -58,11 +58,11 @@ def main():
         Component.kDistortion,
         Component.kCalStatus
     ])
+    compass.setConfig(Configuration.kMountingRef, Orientation.kOrientationYUP180)
     compass.startStreaming()
 
     warn_distortion  = False
     warn_calibration = False
-
 
     try:
         while True:
@@ -78,8 +78,8 @@ def main():
                 warn_calibration = True
 
             ax = math.radians(datum.RAngle)
-            ay = math.radians(datum.PAngle)
-            az = math.radians(datum.Heading)
+            ay = math.radians(-datum.PAngle)
+            az = math.radians(-datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
