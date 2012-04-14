@@ -26,6 +26,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 import collections, crcmod, serial, struct, sys
+from time import time as _time
 from collections import namedtuple
 from decorator import decorator
 from serial import Serial
@@ -339,6 +340,56 @@ class FieldforceTCM:
         c.append(cb)
         self.cb_lock.release()
         return r
+
+    class one_msg_stall:
+        def __init__(self, frame_id):
+            self.cond = threading.Condition()
+            self.data = None
+            self.frame_id = frame_id
+
+        def cb(self):
+            def real_cb(pkts):
+                c = self.cond
+
+                c.aquire()
+                if self.data != None:
+                    c.release()
+                    return True # we are no longer waiting
+                c.release()
+
+                for p in pkts:
+                    if p[0] == frame_id:
+                        c.aquire()
+                        self.data = p
+                        c.notify()
+                        c.release()
+                        return True # remove us.
+                return False # haven't got our packet yet.
+            return real_cb
+
+        def wait(self, timeout=None):
+            c = self.cond
+            c.aquire()
+            start_time = _time()
+            while self.data == None:
+                c.wait(timeout)
+                # required due to http://bugs.python.org/issue1175933
+                if (_time() - start_time) > timeout:
+                    return None
+            it = self.data
+            c.release()
+            return it
+    
+    def _recvSpecificMessage2(self, expected_frame_id, timeout=0.5):
+        s = one_msg_stall(expected_frame_id)
+        self.add_listener(s.cb())
+
+        r = s.wait(timeout)
+
+        if (r == None):
+            raise IOError('Did not recv frame_id {0} within time limit.'.format(expected_frame_id))
+        else:
+            return r[1:]
 
     def __init__(self, path, baud):
         self.fp = Serial(
