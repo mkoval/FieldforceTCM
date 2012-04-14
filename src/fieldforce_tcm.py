@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
 Copyright (c) 2012, Michael Koval
+Copyright (c) 2012, Cody Schafer <cpschafer --- gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -26,6 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import collections, crcmod, serial, struct, sys
 from collections import namedtuple
+from decorator import decorator
 from serial import Serial
 from struct import Struct
 
@@ -209,6 +211,135 @@ class FieldforceTCM:
               2.0737124095482e-3, 1.4823725958818e-3 ]
     }
 
+    def reader(self):
+        """
+        factory which returns a callable object suitable (for example)
+        to pass to threading.Thread(target=reader()).
+        """
+        def do_it():
+            while True:
+                self.wait_and_read_all()
+                rdy_pkts = self.decode()
+                if rdy_pkts:
+                    self.notify_listeners(rdy_pkts)
+        return do_it
+
+    def _wait_and_read_all(self):
+        s = self.fp
+        b = self.recv_buf
+        b.append(s.read())
+        wait_ct = s.inWaiting()
+        if wait_ct > 0:
+            b.extend(s.read(wait_ct))
+
+    def _notify_listeners(self, rdy_pkts):
+        cbs = self.recv_cbs
+        for i in range(0, len(cbs)):
+            if cb(cbs[i]):
+                # A callback returning true is removed.
+                del cbs[i]
+
+    def _decode(self):
+        """
+        Given self.recv_buf and self.crc, attempts to decode a valid packet,
+        advancing by a single byte on each decoding failure.
+        """
+
+        b = self.recv_buf
+        crc_fn = self.crc
+        decode_pos  = 0
+        discard_amt = 0
+        good_pos    = 0 # discard before this
+        decode_len  = len(b)
+        rdy_pkts = []
+
+        # min packet = 2 (byte_count) + 1 (frame id) + 2 (crc) = 5
+        while decode_len > 5:
+            (byte_count, ) = struct.unpack_from('>H', b)
+      
+            frame_size = byte_count - 4
+            
+            # max frame = 4092, min frame = 1
+            if frame_size < 1 or frame_size > 4092:
+                decode_pos += 1
+                decode_len -= 1
+                continue
+            
+            # not enough in buffer for this decoding
+            if decode_len < byte_count:
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            frame_pos = decode_pos + 2
+            frame_id = b[frame_pos]
+
+            # invalid frame id
+            if frame_id not in FrameID.__dict__.itervalues():
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            crc_pos   = frame_pos  + frame_size
+            crc = b[crc_pos:crc_pos + 2]
+            bc_and_frame = b[decode_pos:frame_pos + frame_size + 1]
+
+            # CRC failure
+            crc_check = crc_fn(bc_and_frame)
+            if crc != crc_check:
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            # valid packet? wow.
+            rdy_pkts.append(b[frame_pos:frame_pos + frame_size + 1])
+
+            # number of invalid bytes discarded to make this work. 
+            discard_amt += decode_pos - good_pos
+
+            # advance to right after the decoded packet.
+            decode_pos += byte_count
+            decode_len -= byte_count
+
+            # the decode position that will be started from next time
+            good_pos     = decode_pos
+
+        # discard this packet from buffer. also discard everything prior.
+        del b[0:good_pos]
+        self.discard_stat += discard_amt
+
+        return rdy_pkts
+
+    @staticmethod
+    @decorator
+    def cb_one_at_a_time(cb):
+        def magic(pkts):
+            for p in pkts:
+                r = cb(p)
+
+        return magic
+
+    @staticmethod
+    @decorator
+    def listen_for_a(frame_id, cb): 
+        """
+        helper for setting up a listener for a specific frame_id
+        """
+        @cb_one_at_a_time
+        def magic(p):
+            if p[0] == frame_id:
+                cb(p)
+
+        return magic
+
+    def add_listener(self, cb):
+        c = self.recv_cbs
+        self.cb_lock.aquire()
+        r = len(c)
+        c.append(cb)
+        self.cb_lock.release()
+        return r
+
     def __init__(self, path, baud):
         self.fp = Serial(
             port     = path,
@@ -219,6 +350,11 @@ class FieldforceTCM:
         )
         # CRC-16 with generator polynomial X^16 + X^12 + X^5 + 1.
         self.crc = crcmod.mkCrcFun(0b10001000000100001, 0, False)
+        self.recv_cbs = []
+        self.cb_lock = threading.Lock()
+
+        self.decode_pos = 0
+        self.recv_buf = bytearray()
 
     def close(self):
         self.fp.flush()
@@ -309,6 +445,12 @@ class FieldforceTCM:
         payload_value = self.config[config_id].struct.pack(value)
         self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
         self._recvSpecificMessage(FrameID.kSetConfigDone)
+
+    def takeUserCalSample(self):
+        """
+        Commands the module to take a sample during user calibration.
+        """
+        self._sendMessage(FrameID.kTakeUserCalSample)
 
     def getConfig(self, config_id):
         """
