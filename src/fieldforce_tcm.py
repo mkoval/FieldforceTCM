@@ -360,7 +360,7 @@ class FieldforceTCM:
         self.cb_lock.release()
         return r
 
-    def _recvSpecificMessage(self, expected_frame_id, timeout=0.5):
+    def _recvSpecificMessage(self, expected_frame_id, timeout=20):
         s = _one_msg_stall(expected_frame_id)
         self.add_listener(s.cb())
 
