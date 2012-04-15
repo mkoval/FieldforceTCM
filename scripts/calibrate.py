@@ -40,26 +40,27 @@ import pygame
 from pygame.event import Event
 
 class EventQueue:
-	def __init__(self):
-		self.cond = threading.Condition()
-		self.q    = deque()
+    def __init__(self):
+        self.cond = threading.Condition()
+        self.q    = deque()
 
-	def post(self, event):
-		c = self.cond
-		c.acquire()
-		self.q.appendleft(event)
-		c.notify()
-		c.release()
+    def post(self, event):
+        c = self.cond
+        c.acquire()
+        self.q.appendleft(event)
+        c.notify()
+        c.release()
 
         def wait(self, timeout=None):
             c = self.cond
             c.acquire()
-	    if timeout != None:
-	            start_time = _time()
+            if timeout != None:
+                start_time = _time()
             while not self.q:
                 c.wait(timeout)
                 # required due to http://bugs.python.org/issue1175933
                 if timeout != None and (_time() - start_time) > timeout:
+                    c.release()
                     return None
             it = self.q.pop()
             c.release()
@@ -123,7 +124,7 @@ def main():
 				event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
 
 	cr = threading.Thread(target=compass_reader)
-	cr.daemon = False
+	cr.daemon = True
 	cr.start()
 
 
@@ -131,7 +132,7 @@ def main():
 		while True:
 			event.post(Event(KEYS, key=sys.stdin.read(1)))
 	kr = threading.Thread(target=keyboard_reader)
-	kr.daemon = False
+	kr.daemon = True
 	kr.start()
 
 	running  = True

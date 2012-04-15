@@ -389,7 +389,7 @@ class FieldforceTCM:
         self.recv_buf = bytearray()
 
         self.read_th = rt = threading.Thread(target=self.reader())
-        rt.daemon = False
+        rt.daemon = True
         rt.start()
 
     def close(self):
