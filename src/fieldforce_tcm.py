@@ -25,7 +25,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import collections, crcmod, serial, struct, sys
+import collections, crcmod, serial, struct, sys, threading
 from time import time as _time
 from collections import namedtuple
 from decorator import decorator
@@ -123,6 +123,47 @@ class Calibration:
     kAccelCalibration         = 100
     kAccelMagneticCalibration = 110
 
+class _one_msg_stall:
+    def __init__(self, frame_id):
+        self.cond = threading.Condition()
+        self.data = None
+        self.frame_id = frame_id
+
+    def cb(self):
+        def real_cb(pkts):
+            c = self.cond
+
+            c.acquire()
+            if self.data != None:
+                c.release()
+                return True # we are no longer waiting
+            c.release()
+
+            for p in pkts:
+                if p[0] == frame_id:
+                    c.acquire()
+                    self.data = p
+                    c.notify()
+                    c.release()
+                    return True # remove us.
+            return False # haven't got our packet yet.
+        return real_cb
+
+    def wait(self, timeout=None):
+        c = self.cond
+        c.acquire()
+        if timeout != None:
+            start_time = _time()
+        while self.data == None:
+            c.wait(timeout)
+            # required due to http://bugs.python.org/issue1175933
+            if timeout != None and (_time() - start_time) > timeout:
+                c.release()
+                return None
+        it = self.data
+        c.release()
+        return it
+
 class FieldforceTCM:
     Component = namedtuple('Component', [
         'name', 'struct'
@@ -219,10 +260,10 @@ class FieldforceTCM:
         """
         def do_it():
             while True:
-                self.wait_and_read_all()
-                rdy_pkts = self.decode()
+                self._wait_and_read_all()
+                rdy_pkts = self._decode()
                 if rdy_pkts:
-                    self.notify_listeners(rdy_pkts)
+                    self._notify_listeners(rdy_pkts)
         return do_it
 
     def _wait_and_read_all(self):
@@ -256,16 +297,16 @@ class FieldforceTCM:
 
         # min packet = 2 (byte_count) + 1 (frame id) + 2 (crc) = 5
         while decode_len > 5:
+            print('--decode attempt')
             (byte_count, ) = struct.unpack_from('>H', b)
-      
             frame_size = byte_count - 4
-            
+
             # max frame = 4092, min frame = 1
             if frame_size < 1 or frame_size > 4092:
                 decode_pos += 1
                 decode_len -= 1
                 continue
-            
+
             # not enough in buffer for this decoding
             if decode_len < byte_count:
                 decode_pos += 1
@@ -295,7 +336,7 @@ class FieldforceTCM:
             # valid packet? wow.
             rdy_pkts.append(b[frame_pos:frame_pos + frame_size + 1])
 
-            # number of invalid bytes discarded to make this work. 
+            # number of invalid bytes discarded to make this work.
             discard_amt += decode_pos - good_pos
 
             # advance to right after the decoded packet.
@@ -311,77 +352,16 @@ class FieldforceTCM:
 
         return rdy_pkts
 
-    @staticmethod
-    @decorator
-    def cb_one_at_a_time(cb):
-        def magic(pkts):
-            for p in pkts:
-                r = cb(p)
-
-        return magic
-
-    @staticmethod
-    @decorator
-    def listen_for_a(frame_id, cb): 
-        """
-        helper for setting up a listener for a specific frame_id
-        """
-        @cb_one_at_a_time
-        def magic(p):
-            if p[0] == frame_id:
-                cb(p)
-
-        return magic
-
     def add_listener(self, cb):
         c = self.recv_cbs
-        self.cb_lock.aquire()
+        self.cb_lock.acquire()
         r = len(c)
         c.append(cb)
         self.cb_lock.release()
         return r
 
-    class one_msg_stall:
-        def __init__(self, frame_id):
-            self.cond = threading.Condition()
-            self.data = None
-            self.frame_id = frame_id
-
-        def cb(self):
-            def real_cb(pkts):
-                c = self.cond
-
-                c.aquire()
-                if self.data != None:
-                    c.release()
-                    return True # we are no longer waiting
-                c.release()
-
-                for p in pkts:
-                    if p[0] == frame_id:
-                        c.aquire()
-                        self.data = p
-                        c.notify()
-                        c.release()
-                        return True # remove us.
-                return False # haven't got our packet yet.
-            return real_cb
-
-        def wait(self, timeout=None):
-            c = self.cond
-            c.aquire()
-            start_time = _time()
-            while self.data == None:
-                c.wait(timeout)
-                # required due to http://bugs.python.org/issue1175933
-                if (_time() - start_time) > timeout:
-                    return None
-            it = self.data
-            c.release()
-            return it
-    
-    def _recvSpecificMessage2(self, expected_frame_id, timeout=0.5):
-        s = one_msg_stall(expected_frame_id)
+    def _recvSpecificMessage(self, expected_frame_id, timeout=0.5):
+        s = _one_msg_stall(expected_frame_id)
         self.add_listener(s.cb())
 
         r = s.wait(timeout)
@@ -405,7 +385,12 @@ class FieldforceTCM:
         self.cb_lock = threading.Lock()
 
         self.decode_pos = 0
+        self.discard_stat = 0
         self.recv_buf = bytearray()
+
+        self.read_th = rt = threading.Thread(target=self.reader())
+        rt.daemon = False
+        rt.start()
 
     def close(self):
         self.fp.flush()
@@ -414,37 +399,11 @@ class FieldforceTCM:
     def _send(self, fmt):
         self.fp.write(fmt)
 
-    def _recv(self, fmt):
-        struct_fmt = fmt if type(fmt) == Struct else Struct(fmt)
-        data = self.fp.read(struct_fmt.size)
-        return struct_fmt.unpack(data)
-
     def _sendMessage(self, frame_id, payload):
         count = len(payload) + 5
         head = struct.pack('>HB{0}s'.format(len(payload)), count, frame_id, payload)
         tail = struct.pack('>H', self.crc(head))
         self._send(head + tail)
-
-    def _recvMessage(self):
-        (count, ) = self._recv('>H')
-        payload_count = count - 5
-        fid, payload, crc = self._recv('>B{0}sH'.format(payload_count))
-
-        check = struct.pack('>HB{0}s'.format(payload_count), count, fid, payload)
-        crc_check = self.crc(check)
-
-        if crc == crc_check:
-            return fid, payload
-        else:
-            raise IOError('CRC-16 checksum failed.')
-
-    def _recvSpecificMessage(self, expected_frame_id):
-        frame_id, data = self._recvMessage()
-
-        if frame_id == expected_frame_id:
-            return data
-        else:
-            raise IOError('Response has unexpected frame id: {0}.'.format(frame_id))
 
     def _createDatum(self, data):
         for component in self.Datum._fields:
