@@ -28,7 +28,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 from collections import deque
 import threading
-from pygame.event import Event
+
+class Event:
+	def __init__(self, etype, **kws):
+		self.type = etype
+		self.__dict__.extend(kws)
+
 
 class EventQueue:
 	def __init__(self):
