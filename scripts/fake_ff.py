@@ -68,6 +68,8 @@ def main():
 				ff._send(encode_command(FrameID.kSetConfigDone))
 			elif frame_id == FrameID.kStartCal:
 				pass
+			elif frame_id == FrameID.kTakeUserCalSample:
+				print('>>> taking a sample (I swear)')
 			else:
 				raise IOError('''Don't know how to handle frame_id {0} ({1})'''.format(id_name, frame_id))
 		else:

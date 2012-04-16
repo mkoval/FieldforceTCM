@@ -117,9 +117,7 @@ def main():
 	while running:
 		print('waiting for event')
 		ev = event.wait()
-		if   ev.type == QUIT:
-			running = False
-		elif ev.type == COMPASS_IN_CALIB:
+		if ev.type == COMPASS_IN_CALIB:
 			print(ev.prog_data)
 		elif ev.type == COMPASS_CALIB_DONE:
 			print(ev.cal_score)

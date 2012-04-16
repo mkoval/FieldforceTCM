@@ -32,8 +32,7 @@ import threading
 class Event:
 	def __init__(self, etype, **kws):
 		self.type = etype
-		self.__dict__.extend(kws)
-
+		self.__dict__.update(kws)
 
 class EventQueue:
 	def __init__(self):

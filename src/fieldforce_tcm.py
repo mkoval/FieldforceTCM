@@ -439,7 +439,7 @@ class FieldforceTCM:
     def _send(self, fmt):
         self.fp.write(fmt)
 
-    def _sendMessage(self, frame_id, payload):
+    def _sendMessage(self, frame_id, payload=b''):
         count = len(payload) + 5
         head = struct.pack('>HB{0}s'.format(len(payload)), count, frame_id, payload)
         tail = struct.pack('>H', self.crc(head))
@@ -455,7 +455,7 @@ class FieldforceTCM:
         """
         Query the module's type and firmware revision number.
         """
-        self._sendMessage(FrameID.kGetModInfo, b'')
+        self._sendMessage(FrameID.kGetModInfo)
         (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
 
@@ -464,7 +464,7 @@ class FieldforceTCM:
         Query a single packet of data that containing the components specified
         by setDataComponents(). All other components are set to zero.
         """
-        self._sendMessage(FrameID.kGetData, b'')
+        self._sendMessage(FrameID.kGetData)
         (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
@@ -588,7 +588,7 @@ class FieldforceTCM:
         Gets the current acquisition mode. See setAcquisitionParams() for more
         information.
         """
-        self._sendMessage(FrameID.kGetAcqParams, b"")
+        self._sendMessage(FrameID.kGetAcqParams)
         (_, payload)  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
@@ -599,14 +599,14 @@ class FieldforceTCM:
         and use stopStreaming() when done. Streaming must be stopped before any
         other commands can be used.
         """
-        self._sendMessage(FrameID.kStartIntervalMode, b'')
+        self._sendMessage(FrameID.kStartIntervalMode)
 
     def stopStreaming(self):
         """
         Stops streaming data; companion of startStreaming(). Streaming must be
         stopped before any other commands can be used.
         """
-        self._sendMessage(FrameID.kStopIntervalMode, b'')
+        self._sendMessage(FrameID.kStopIntervalMode)
         self.fp.flushInput()
 
     def powerUp(self):
@@ -621,7 +621,7 @@ class FieldforceTCM:
         """
         Power down the sensor down.
         """
-        self._sendMessage(FrameID.kPowerDown, b'')
+        self._sendMessage(FrameID.kPowerDown)
         self._recvSpecificMessage(FrameID.kPowerDownDone)
 
     def save(self):
@@ -631,7 +631,7 @@ class FieldforceTCM:
         paired with any configuration options (e.g. calibration) that are
         intended to be persistant.
         """
-        self._sendMessage(FrameID.kSave, b'')
+        self._sendMessage(FrameID.kSave)
         (_, response) = self._recvSpecificMessage(FrameID.kSaveDone)
         (code, ) = self.struct_uint16.unpack(response)
 
