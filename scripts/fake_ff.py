@@ -50,7 +50,6 @@ def main():
 			eq.post(Event(PKT, data=pkt))
 	ff.add_listener(pkt_cb)
 
-
 	ff_config = dict()
 
 	while True:
@@ -66,6 +65,7 @@ def main():
 				ff._send(pkt)
 			elif frame_id == FrameID.kSetConfig:
 				ff._send(encode_command(FrameID.kSetConfigDone))
+				# TODO: record in ff_config
 			elif frame_id == FrameID.kStartCal:
 				pass
 			elif frame_id == FrameID.kTakeUserCalSample:
