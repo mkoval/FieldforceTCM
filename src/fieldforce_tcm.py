@@ -144,15 +144,15 @@ class Calibration:
     kAccelMagneticCalibration = 110
 
 class _one_msg_stall:
-    def __init__(self, frame_id):
+    def __init__(self, *frame_ids):
         self.cond = threading.Condition()
         self.data = None
-        self.frame_id = frame_id
+        self.frame_ids = frame_ids
 
     def cb(self):
         def real_cb(pkts):
             c = self.cond
-            frame_id = self.frame_id
+            frame_ids = self.frame_ids
 
             c.acquire()
             if self.data != None:
@@ -161,7 +161,9 @@ class _one_msg_stall:
             c.release()
 
             for p in pkts:
-                if p[0] == frame_id:
+                print('p = {0}'.format(p[0]))
+                print(repr(frame_ids))
+                if p[0] in frame_ids:
                     c.acquire()
                     self.data = p
                     c.notify()
@@ -390,9 +392,15 @@ class FieldforceTCM:
         c.append(cb)
         self.cb_lock.release()
         return r
-
-    def _recvSpecificMessage(self, expected_frame_id, timeout=20):
-        s = _one_msg_stall(expected_frame_id)
+    
+    def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
+        # XXX: Really, python?
+        # 'def x(*a, b=2)' is not allowed.
+        if 'timeout' not in only_timeout:
+            timeout = 0.5
+        else:
+            timeout = only_timeout['timeout']
+        s = _one_msg_stall(*expected_frame_id)
         self.add_listener(s.cb())
 
         r = s.wait(timeout)
@@ -400,7 +408,8 @@ class FieldforceTCM:
         if (r == None):
             raise IOError('Did not recv frame_id {0} within time limit.'.format(expected_frame_id))
         else:
-            return r[1:]
+            # XXX: change this when len(expected_frame_id) = 1?
+            return (r[0], r[1:])
 
     def __init__(self, path, baud):
         self.fp = Serial(
@@ -447,7 +456,7 @@ class FieldforceTCM:
         Query the module's type and firmware revision number.
         """
         self._sendMessage(FrameID.kGetModInfo, b'')
-        payload = self._recvSpecificMessage(FrameID.kModInfoResp)
+        (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
 
     def getData(self):
@@ -456,7 +465,7 @@ class FieldforceTCM:
         by setDataComponents(). All other components are set to zero.
         """
         self._sendMessage(FrameID.kGetData, b'')
-        payload = self._recvSpecificMessage(FrameID.kDataResp)
+        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
         comp_index = 0
@@ -500,7 +509,7 @@ class FieldforceTCM:
         payload_id = self.struct_uint8.pack(config_id)
         self._sendMessage(FrameID.kGetConfig, payload_id)
 
-        response = self._recvSpecificMessage(FrameID.kConfigResp)
+        (_, response) = self._recvSpecificMessage(FrameID.kConfigResp)
         (response_id, ) = self.struct_uint8.unpack(response[0])
 
         if response_id == config_id:
@@ -537,7 +546,7 @@ class FieldforceTCM:
         payload_request  = struct.pack('>BB', 3, 1)
         self._sendMessage(FrameID.kGetParam, payload_request)
 
-        payload_response = self._recvSpecificMessage(FrameID.kParamResp)
+        (_, payload_response) = self._recvSpecificMessage(FrameID.kParamResp)
         param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
 
         if param_id != 3:
@@ -580,7 +589,7 @@ class FieldforceTCM:
         information.
         """
         self._sendMessage(FrameID.kGetAcqParams, b"")
-        payload  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
+        (_, payload)  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
@@ -623,7 +632,7 @@ class FieldforceTCM:
         intended to be persistant.
         """
         self._sendMessage(FrameID.kSave, b'')
-        response = self._recvSpecificMessage(FrameID.kSaveDone)
+        (_, response) = self._recvSpecificMessage(FrameID.kSaveDone)
         (code, ) = self.struct_uint16.unpack(response)
 
         if code != 0:
@@ -637,31 +646,28 @@ class FieldforceTCM:
         payload_mode = self.struct_uint32.pack(mode)
         self._sendMessage(FrameID.kStartCal, payload_mode)
 
-    def getCalibrationStatus(self):
+
+    def getCalibrationStatus(self, timeout=1):
         """
         Blocks waiting for a calibration update from the sensor. This returns a
         tuple where the first elements is a boolean that indicates whether the
         calibration is complete.
         """
-        while True:
-            frame_id, message = self._recvMessage()
+        frame_id, message = self._recvSpecificMessage(FrameID.kUserCalSampCount, FrameID.kUserCalScore, timeout=timeout)
 
-            # One UserCalSampCount message is generated for each recorded
-            # sample. This continues until the calibration has converged or the
-            # maximum number of points have been collected.
-            if frame_id == FrameID.kUserCalSampCount:
-                (sample_num, ) = self.struct_uint32.unpack(message)
-                return (False, sample_num)
-            # Calibration accuracy is reported in a single UserCalScore message
-            # once calibration is complete.
-            elif frame_id == FrameID.kUserCalScore:
-                scores_raw = struct.unpack('>6f', message)
-                scores     = self.CalScores(*scores_raw)
-                return (True, scores)
-            # Ignore data updates
-            elif frame_id == FrameID.kDataResp:
-                continue
-            else:
-                raise IOError('Unexpected frame id: {0}.'.format(frame_id))
+        # One UserCalSampCount message is generated for each recorded
+        # sample. This continues until the calibration has converged or the
+        # maximum number of points have been collected.
+        if frame_id == FrameID.kUserCalSampCount:
+            (sample_num, ) = self.struct_uint32.unpack(message)
+            return (False, sample_num)
+        # Calibration accuracy is reported in a single UserCalScore message
+        # once calibration is complete.
+        elif frame_id == FrameID.kUserCalScore:
+            scores_raw = struct.unpack('>6f', message)
+            scores     = self.CalScores(*scores_raw)
+            return (True, scores)
+        else:
+            raise IOError('Unexpected frame id: {0}.'.format(frame_id))
 
 # vim: set et sw=4 ts=4:

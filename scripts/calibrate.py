@@ -87,11 +87,16 @@ def main():
 	KEYS               = 2
 	def compass_reader():
 		while True:
-			done, data = compass.getCalibrationStatus()
-			if done:
-				event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
-			else:
-				event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
+			try:
+				done, data = compass.getCalibrationStatus()
+
+				if done:
+					event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
+				else:
+					event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
+			except IOError as e:
+				# Timed out.
+				print('Warning: wait for calibration status timed out')
 
 	cr = threading.Thread(target=compass_reader)
 	cr.daemon = True

@@ -50,6 +50,9 @@ def main():
 			eq.post(Event(PKT, data=pkt))
 	ff.add_listener(pkt_cb)
 
+
+	ff_config = dict()
+
 	while True:
 		ev = eq.wait()
 		if ev.type == PKT:
@@ -61,6 +64,10 @@ def main():
 			if frame_id == FrameID.kSetParam:
 				pkt = encode_command(FrameID.kSetParamDone)
 				ff._send(pkt)
+			elif frame_id == FrameID.kSetConfig:
+				ff._send(encode_command(FrameID.kSetConfigDone))
+			elif frame_id == FrameID.kStartCal:
+				pass
 			else:
 				raise IOError('''Don't know how to handle frame_id {0} ({1})'''.format(id_name, frame_id))
 		else:
