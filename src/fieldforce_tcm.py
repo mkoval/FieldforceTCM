@@ -88,6 +88,7 @@ class FrameID:
     kSetMode            = 46
     kSetModeResp        = 47
     kSyncRead           = 49
+FrameID.__dict__['invert'] = dict([(v, k) for (k, v) in FrameID.__dict__.iteritems()])
 
 class Component:
     kHeading     = 5

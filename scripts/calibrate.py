@@ -34,37 +34,8 @@ spath.insert(0, "{0}/../src".format(_us))
 from fieldforce_tcm import *
 spath.pop(0)
 
-from time import sleep
-from collections import deque
 import threading
-from pygame.event import Event
-
-class EventQueue:
-    def __init__(self):
-        self.cond = threading.Condition()
-        self.q    = deque()
-
-    def post(self, event):
-        c = self.cond
-        c.acquire()
-        self.q.appendleft(event)
-        c.notify()
-        c.release()
-
-        def wait(self, timeout=None):
-            c = self.cond
-            c.acquire()
-            if timeout != None:
-                start_time = _time()
-            while not self.q:
-                c.wait(timeout)
-                # required due to http://bugs.python.org/issue1175933
-                if timeout != None and (_time() - start_time) > timeout:
-                    c.release()
-                    return None
-            it = self.q.pop()
-            c.release()
-            return it
+from event import *
 
 def main():
 	#if not pygame.mixer: print('Warning, sound disabled')

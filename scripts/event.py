@@ -26,47 +26,33 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
-from sys import argv, exit, path as spath
-from os.path import dirname
+from collections import deque
+import threading
+from pygame.event import Event
 
-_us = dirname(__file__)
-spath.insert(0, "{0}/../src".format(_us))
-from fieldforce_tcm import *
-spath.pop(0)
+class EventQueue:
+	def __init__(self):
+		self.cond = threading.Condition()
+		self.q    = deque()
 
-from event import *
+	def post(self, event):
+		c = self.cond
+		c.acquire()
+		self.q.appendleft(event)
+		c.notify()
+		c.release()
 
-def main():
-	if len(argv) != 2:
-		print('usage: {0} <pty>'.format(argv[0]))
-		exit()
-
-	ff = FieldforceTCM(argv[1], 38400)
-	eq = EventQueue()
-	
-	PKT = 0
-	def pkt_cb(rdy_pkts):
-		for pkt in rdy_pkts:
-			eq.post(Event(PKT, data=pkt))
-	ff.add_listener(pkt_cb)
-
-	while True:
-		ev = eq.wait()
-		if ev.type == PKT:
-			frame = ev.data
-			frame_id = frame[0]
-			payload  = frame[1:len(frame)]
-			id_name = FrameID.invert[frame_id]
-			print ('recved {0} ({1})'.format(id_name, frame_id))
-			if frame_id == FrameID.kSetParam:
-				pkt = encode_command(FrameID.kSetParamDone)
-				ff._send(pkt)
-			else:
-				raise IOError('''Don't know how to handle frame_id {0} ({1})'''.format(id_name, frame_id))
-		else:
-			print ('eh?')
-
-	print('done.')
-
-if __name__ == '__main__':
-	main()
+	def wait(self, timeout=None):
+		c = self.cond
+		c.acquire()
+		if timeout != None:
+			start_time = _time()
+		while not self.q:
+			c.wait(timeout)
+			# required due to http://bugs.python.org/issue1175933
+			if timeout != None and (_time() - start_time) > timeout:
+				c.release()
+				return None
+		it = self.q.pop()
+		c.release()
+		return it
