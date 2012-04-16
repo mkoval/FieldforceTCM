@@ -34,9 +34,9 @@ spath.insert(0, "{0}/../src".format(_us))
 from fieldforce_tcm import *
 spath.pop(0)
 
+from time import sleep
 from collections import deque
 import threading
-import pygame
 from pygame.event import Event
 
 class EventQueue:
@@ -111,9 +111,9 @@ def main():
 	#   information will be output from the module, and this can be
 	#   monitored using kDataResp.
 
-	COMPASS_IN_CALIB   = pygame.USEREVENT
-	COMPASS_CALIB_DONE = COMPASS_IN_CALIB + 1
-	KEYS               = COMPASS_CALIB_DONE + 1
+	COMPASS_IN_CALIB   = 0
+	COMPASS_CALIB_DONE = 1
+	KEYS               = 2
 	def compass_reader():
 		# BUG, FIXME: does not tolerate other communications while waiting.
 		while True:

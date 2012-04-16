@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# vim: set fileencoding=utf-8 :
 """
 Copyright (c) 2012, Michael Koval
 Copyright (c) 2012, Cody Schafer <cpschafer --- gmail.com>
@@ -31,6 +32,24 @@ from collections import namedtuple
 from decorator import decorator
 from serial import Serial
 from struct import Struct
+
+_crc_ccitt = crcmod.mkCrcFun(0b10001000000100001, 0, False)
+
+def encode_frame(byteb):
+    l = len(byteb) + 4
+    pkt = bytearray()
+    pkt.extend(struct.pack('>H', l))
+    pkt.extend(byteb)
+    crc = _crc_ccitt(bytes(pkt))
+    pkt.extend(struct.pack('>H', crc))
+    return pkt
+
+def encode_command(frame_id, payload = b''):
+    print 'encoding {0}'.format(frame_id)
+    pkt = bytearray()
+    pkt.append(frame_id)
+    pkt.extend(payload)
+    return encode_frame(pkt)
 
 class FrameID:
     kGetModInfo         = 1
@@ -132,6 +151,7 @@ class _one_msg_stall:
     def cb(self):
         def real_cb(pkts):
             c = self.cond
+            frame_id = self.frame_id
 
             c.acquire()
             if self.data != None:
@@ -276,17 +296,19 @@ class FieldforceTCM:
 
     def _notify_listeners(self, rdy_pkts):
         cbs = self.recv_cbs
+        lock = self.cb_lock
+        lock.acquire()
         for i in range(0, len(cbs)):
-            if cb(cbs[i]):
+            if cbs[i](rdy_pkts):
                 # A callback returning true is removed.
                 del cbs[i]
+        lock.release()
 
     def _decode(self):
         """
         Given self.recv_buf and self.crc, attempts to decode a valid packet,
         advancing by a single byte on each decoding failure.
         """
-
         b = self.recv_buf
         crc_fn = self.crc
         decode_pos  = 0
@@ -295,20 +317,26 @@ class FieldforceTCM:
         decode_len  = len(b)
         rdy_pkts = []
 
+        #print repr(bytes(b))
         # min packet = 2 (byte_count) + 1 (frame id) + 2 (crc) = 5
-        while decode_len > 5:
-            print('--decode attempt')
-            (byte_count, ) = struct.unpack_from('>H', b)
+        #attempt_ct = 0
+        #print decode_len
+        while decode_len >= 5:
+            #attempt_ct += 1
+            #print '--decode attempt {0}'.format(attempt_ct)
+            (byte_count, ) = struct.unpack('>H', bytes(b[decode_pos:decode_pos+2]))
             frame_size = byte_count - 4
 
             # max frame = 4092, min frame = 1
             if frame_size < 1 or frame_size > 4092:
+                #print '-- fail 1 {0}'.format(frame_size)
                 decode_pos += 1
                 decode_len -= 1
                 continue
 
             # not enough in buffer for this decoding
             if decode_len < byte_count:
+                #print '-- fail 2'
                 decode_pos += 1
                 decode_len -= 1
                 continue
@@ -318,23 +346,25 @@ class FieldforceTCM:
 
             # invalid frame id
             if frame_id not in FrameID.__dict__.itervalues():
+                #print '-- fail 3'
                 decode_pos += 1
                 decode_len -= 1
                 continue
 
             crc_pos   = frame_pos  + frame_size
             crc = b[crc_pos:crc_pos + 2]
-            bc_and_frame = b[decode_pos:frame_pos + frame_size + 1]
+            entire_pkt = b[decode_pos:frame_pos + frame_size + 2]
 
             # CRC failure
-            crc_check = crc_fn(bc_and_frame)
-            if crc != crc_check:
+            crc_check = crc_fn(bytes(entire_pkt))
+            if crc_check != 0:
+                #print '-- fail 4'
                 decode_pos += 1
                 decode_len -= 1
                 continue
 
             # valid packet? wow.
-            rdy_pkts.append(b[frame_pos:frame_pos + frame_size + 1])
+            rdy_pkts.append(b[frame_pos:frame_pos + frame_size])
 
             # number of invalid bytes discarded to make this work.
             discard_amt += decode_pos - good_pos
@@ -360,7 +390,7 @@ class FieldforceTCM:
         self.cb_lock.release()
         return r
 
-    def _recvSpecificMessage(self, expected_frame_id, timeout=0.5):
+    def _recvSpecificMessage(self, expected_frame_id, timeout=20):
         s = _one_msg_stall(expected_frame_id)
         self.add_listener(s.cb())
 
