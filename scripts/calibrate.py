@@ -115,7 +115,6 @@ def main():
 	COMPASS_CALIB_DONE = 1
 	KEYS               = 2
 	def compass_reader():
-		# BUG, FIXME: does not tolerate other communications while waiting.
 		while True:
 			done, data = compass.getCalibrationStatus()
 			if done:
