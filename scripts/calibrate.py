@@ -38,111 +38,116 @@ import threading
 from event import *
 
 def main():
-	#if not pygame.mixer: print('Warning, sound disabled')
-	if len(argv) < 2:
-		exit('usage: {0} <serial port>'.format(argv[0]))
+    #if not pygame.mixer: print('Warning, sound disabled')
+    if len(argv) < 2:
+        exit('usage: {0} <serial port>'.format(argv[0]))
 
-	fname   = argv[1]
-	compass = FieldforceTCM(fname, 38400)
-	event   = EventQueue()
-	#pygame.mixer.init()
-	#exit('Could not open {0}, {1}'.format(fname, e))
+    fname   = argv[1]
+    compass = FieldforceTCM(fname, 38400)
+    event   = EventQueue()
+    #pygame.mixer.init()
+    #exit('Could not open {0}, {1}'.format(fname, e))
 
-	# Using the kSetParam command, set the number of tap filters to 32.
-	compass.setFilter(32)
-	# Using the kSetConfig command, set kUserCalAutoSampling. “False” is
-	#  generally recommended, but “True” may be more convenient.
-	compass.setConfig(Configuration.kUserCalAutoSampling, False)
-	# Using the kSetConfig command, set kCoeffCopySet (magnetometer
-	#   calibration) and/or kAccelCoeffCopySet (accelerometer calibration).
-	#   These fields allow the user to save multiple sets of calibration
-	#   coefficients.  “0” is the default.
-	compass.setConfig(Configuration.kCoeffCopySet, 1)
-	compass.setConfig(Configuration.kAccelCoeffCopySet, 1)
-	# Using the kSetConfig command again, set kUserCalNumPoints to the
-	# appropriate number of calibration points. The number of calibration
-	# points should be at least 12 for Full Range Calibration, Limited Tilt
-	# Range Calibration and 2D Calibration; at least 6 for Hard Iron Only
-	# Calibration; and at least 18 for Accel Only Calibration and
+    # Using the kSetParam command, set the number of tap filters to 32.
+    compass.setFilter(32)
+    # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
+    #  generally recommended, but “True” may be more convenient.
+    compass.setConfig(Configuration.kUserCalAutoSampling, False)
+    # Using the kSetConfig command, set kCoeffCopySet (magnetometer
+    #   calibration) and/or kAccelCoeffCopySet (accelerometer calibration).
+    #   These fields allow the user to save multiple sets of calibration
+    #   coefficients.  “0” is the default.
+    compass.setConfig(Configuration.kCoeffCopySet, 1)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, 1)
+    # Using the kSetConfig command again, set kUserCalNumPoints to the
+    # appropriate number of calibration points. The number of calibration
+    # points should be at least 12 for Full Range Calibration, Limited Tilt
+    # Range Calibration and 2D Calibration; at least 6 for Hard Iron Only
+    # Calibration; and at least 18 for Accel Only Calibration and
 
-	#Accel and Mag Calibration.
-	compass.setConfig(Configuration.kUserCalNumPoints, 32)
-	# Initiate a calibration using the kStartCal command. Note that this
-	#   command requires indentifying the type of calibration procedure
-	#   (i.e. Full Range, 2D, etc.).
+    #Accel and Mag Calibration.
+    compass.setConfig(Configuration.kUserCalNumPoints, 32)
+    # Initiate a calibration using the kStartCal command. Note that this
+    #   command requires indentifying the type of calibration procedure
+    #   (i.e. Full Range, 2D, etc.).
 
-	compass.startCalibration(Calibration.kLimitedTiltCalibraion)
-	print('calibration started')
-	# Follow the appropriate calibration procedure discussed in Sections
-	#   6.2.1 to 6.2.6. If kUserCalAutoSampling was set to “False”, then
-	#   send a kTakeUserCalSample command when ready to take a calibration
-	#   point.  If kUserCalAutoSampling was set to “True”, then look for
-	#   kUserCalSampCount to confirm when a calibration point has been
-	#   taken. During the calibration process, heading, pitch, and roll
-	#   information will be output from the module, and this can be
-	#   monitored using kDataResp.
+    compass.startCalibration(Calibration.kLimitedTiltCalibraion)
+    print('calibration started')
+    # Follow the appropriate calibration procedure discussed in Sections
+    #   6.2.1 to 6.2.6. If kUserCalAutoSampling was set to “False”, then
+    #   send a kTakeUserCalSample command when ready to take a calibration
+    #   point.  If kUserCalAutoSampling was set to “True”, then look for
+    #   kUserCalSampCount to confirm when a calibration point has been
+    #   taken. During the calibration process, heading, pitch, and roll
+    #   information will be output from the module, and this can be
+    #   monitored using kDataResp.
 
-	COMPASS_IN_CALIB   = 0
-	COMPASS_CALIB_DONE = 1
-	KEYS               = 2
-	def compass_reader():
-		while True:
-			try:
-				done, data = compass.getCalibrationStatus()
+    COMPASS_IN_CALIB   = 0
+    COMPASS_CALIB_DONE = 1
+    KEYS               = 2
 
-				if done:
-					event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
-				else:
-					event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
-			except IOError as e:
-				# Timed out.
-				print('Warning: wait for calibration status timed out')
+    def compass_reader():
+        while True:
+            try:
+                done, data = compass.getCalibrationStatus()
+                print('Recieved calibration data {0} {1}'.format(repr(done), repr(data)))
+                if done:
+                    event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
+                else:
+                    event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
+            except IOError as e:
+                # Timed out.
+                print('Warning: wait for calibration status timed out')
 
-	cr = threading.Thread(target=compass_reader)
-	cr.daemon = True
-	cr.start()
+    cr = threading.Thread(target=compass_reader)
+    cr.daemon = True
+    cr.start()
 
 
-	def keyboard_reader():
-		while True:
-			event.post(Event(KEYS, key=sys.stdin.read(1)))
-	kr = threading.Thread(target=keyboard_reader)
-	kr.daemon = True
-	kr.start()
+    def keyboard_reader():
+        while True:
+            event.post(Event(KEYS, key=sys.stdin.read(1)))
+    kr = threading.Thread(target=keyboard_reader)
+    kr.daemon = True
+    kr.start()
 
-	running  = True
-	auto     = False
-	in_calib = True
-	save_q   = False
-	while running:
-		print('waiting for event')
-		ev = event.wait()
-		if ev.type == COMPASS_IN_CALIB:
-			print(ev.prog_data)
-		elif ev.type == COMPASS_CALIB_DONE:
-			print(ev.cal_score)
-		elif ev.type == KEYS:
-			if   ev.key == 'Q' or ev.key == 'q':
-				running = False
-			elif ev.key == ' ':
-				if   not auto and in_calib:
-					compass.takeUserCalSample()
-				elif not in_calib:
-					compass.startCalibration()
-			elif ev.key == 's' or ev.key == 'S':
-				# if deciding to save, save
-				if save_q:
-					save_q = False
-					compass.save()
-			elif ev.key == 'a' or ev.key == 'A':
-				auto = not auto
-				compass.setConfig(Configuration.kUserCalAutoSampling, auto)
-				if auto:
-						print('auto measurments ON')
-				else:
-						print('auto measurments OFF')
-		else:
-			print('unknown event {0}'.format(ev))
+    running  = True
+    auto     = False
+    in_calib = True
+    save_q   = False
+    while running:
+        print('waiting for event')
+        ev = event.wait()
+        if ev.type == COMPASS_IN_CALIB:
+            print('Got a measurment')
+            print(repr(ev.prog_data))
+        elif ev.type == COMPASS_CALIB_DONE:
+            print('Calibration done')
+            print(repr(ev.cal_score))
+        elif ev.type == KEYS:
+            if   ev.key == 'Q' or ev.key == 'q':
+                running = False
+            elif ev.key == ' ':
+                if   not auto and in_calib:
+                    compass.takeUserCalSample()
+                elif not in_calib:
+                    compass.startCalibration()
+            elif ev.key == 's' or ev.key == 'S':
+                    # if deciding to save, save
+		if save_q:
+                        save_q = False
+                        compass.save()
+            elif ev.key == 'a' or ev.key == 'A':
+                auto = not auto
+                compass.setConfig(Configuration.kUserCalAutoSampling, auto)
+                if auto:
+                    print('auto measurments ON')
+                else:
+                    print('auto measurments OFF')
+            else:
+                print('unknown key = {0}'.format(repr(ev.key)))
+        else:
+            print('unknown event {0}'.format(ev))
 
 # When the final calibration point is taken, the module will present the
 #   calibration score using kUserCalScore.

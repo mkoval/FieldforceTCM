@@ -161,11 +161,9 @@ class _one_msg_stall:
             c.release()
 
             for p in pkts:
-                print('p = {0}'.format(p[0]))
-                print(repr(frame_ids))
                 if p[0] in frame_ids:
                     c.acquire()
-                    self.data = p
+                    self.data = bytes(p)
                     c.notify()
                     c.release()
                     return True # remove us.
@@ -647,7 +645,7 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kStartCal, payload_mode)
 
 
-    def getCalibrationStatus(self, timeout=1):
+    def getCalibrationStatus(self, timeout=5):
         """
         Blocks waiting for a calibration update from the sensor. This returns a
         tuple where the first elements is a boolean that indicates whether the
@@ -658,12 +656,16 @@ class FieldforceTCM:
         # One UserCalSampCount message is generated for each recorded
         # sample. This continues until the calibration has converged or the
         # maximum number of points have been collected.
+        print 'getCalibrationStatus frame_id={0}, len={1}, data={2}'.format(
+                    repr(frame_id), len(message), repr(message))
         if frame_id == FrameID.kUserCalSampCount:
+            print '-- a'
             (sample_num, ) = self.struct_uint32.unpack(message)
             return (False, sample_num)
         # Calibration accuracy is reported in a single UserCalScore message
         # once calibration is complete.
         elif frame_id == FrameID.kUserCalScore:
+            print '-- b'
             scores_raw = struct.unpack('>6f', message)
             scores     = self.CalScores(*scores_raw)
             return (True, scores)
