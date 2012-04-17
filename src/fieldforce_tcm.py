@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+# vim: set fileencoding=utf-8 :
 """
 Copyright (c) 2012, Michael Koval
+Copyright (c) 2012, Cody Schafer <cpschafer --- gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -24,10 +26,30 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import collections, crcmod, serial, struct, sys
+import collections, crcmod, serial, struct, sys, threading
+from time import time as _time
 from collections import namedtuple
+from decorator import decorator
 from serial import Serial
 from struct import Struct
+
+_crc_ccitt = crcmod.mkCrcFun(0b10001000000100001, 0, False)
+
+def encode_frame(byteb):
+    l = len(byteb) + 4
+    pkt = bytearray()
+    pkt.extend(struct.pack('>H', l))
+    pkt.extend(byteb)
+    crc = _crc_ccitt(bytes(pkt))
+    pkt.extend(struct.pack('>H', crc))
+    return pkt
+
+def encode_command(frame_id, payload = b''):
+    print 'encoding {0}'.format(frame_id)
+    pkt = bytearray()
+    pkt.append(frame_id)
+    pkt.extend(payload)
+    return encode_frame(pkt)
 
 class FrameID:
     kGetModInfo         = 1
@@ -66,6 +88,7 @@ class FrameID:
     kSetMode            = 46
     kSetModeResp        = 47
     kSyncRead           = 49
+FrameID.__dict__['invert'] = dict([(v, k) for (k, v) in FrameID.__dict__.iteritems()])
 
 class Component:
     kHeading     = 5
@@ -119,6 +142,50 @@ class Calibration:
     kLimitedTiltCalibraion    = 40
     kAccelCalibration         = 100
     kAccelMagneticCalibration = 110
+
+class _one_msg_stall:
+    def __init__(self, *frame_ids):
+        self.cond = threading.Condition()
+        self.data = None
+        self.frame_ids = frame_ids
+
+    def cb(self):
+        def real_cb(pkts):
+            c = self.cond
+            frame_ids = self.frame_ids
+
+            c.acquire()
+            if self.data != None:
+                c.release()
+                return True # we are no longer waiting
+            c.release()
+
+            for p in pkts:
+                print('p = {0}'.format(p[0]))
+                print(repr(frame_ids))
+                if p[0] in frame_ids:
+                    c.acquire()
+                    self.data = p
+                    c.notify()
+                    c.release()
+                    return True # remove us.
+            return False # haven't got our packet yet.
+        return real_cb
+
+    def wait(self, timeout=None):
+        c = self.cond
+        c.acquire()
+        if timeout != None:
+            start_time = _time()
+        while self.data == None:
+            c.wait(timeout)
+            # required due to http://bugs.python.org/issue1175933
+            if timeout != None and (_time() - start_time) > timeout:
+                c.release()
+                return None
+        it = self.data
+        c.release()
+        return it
 
 class FieldforceTCM:
     Component = namedtuple('Component', [
@@ -209,6 +276,141 @@ class FieldforceTCM:
               2.0737124095482e-3, 1.4823725958818e-3 ]
     }
 
+    def reader(self):
+        """
+        factory which returns a callable object suitable (for example)
+        to pass to threading.Thread(target=reader()).
+        """
+        def do_it():
+            while True:
+                self._wait_and_read_all()
+                rdy_pkts = self._decode()
+                if rdy_pkts:
+                    self._notify_listeners(rdy_pkts)
+        return do_it
+
+    def _wait_and_read_all(self):
+        s = self.fp
+        b = self.recv_buf
+        b.append(s.read())
+        wait_ct = s.inWaiting()
+        if wait_ct > 0:
+            b.extend(s.read(wait_ct))
+
+    def _notify_listeners(self, rdy_pkts):
+        cbs = self.recv_cbs
+        lock = self.cb_lock
+        lock.acquire()
+        for i in range(0, len(cbs)):
+            if cbs[i](rdy_pkts):
+                # A callback returning true is removed.
+                del cbs[i]
+        lock.release()
+
+    def _decode(self):
+        """
+        Given self.recv_buf and self.crc, attempts to decode a valid packet,
+        advancing by a single byte on each decoding failure.
+        """
+        b = self.recv_buf
+        crc_fn = self.crc
+        decode_pos  = 0
+        discard_amt = 0
+        good_pos    = 0 # discard before this
+        decode_len  = len(b)
+        rdy_pkts = []
+
+        #print repr(bytes(b))
+        # min packet = 2 (byte_count) + 1 (frame id) + 2 (crc) = 5
+        #attempt_ct = 0
+        #print decode_len
+        while decode_len >= 5:
+            #attempt_ct += 1
+            #print '--decode attempt {0}'.format(attempt_ct)
+            (byte_count, ) = struct.unpack('>H', bytes(b[decode_pos:decode_pos+2]))
+            frame_size = byte_count - 4
+
+            # max frame = 4092, min frame = 1
+            if frame_size < 1 or frame_size > 4092:
+                #print '-- fail 1 {0}'.format(frame_size)
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            # not enough in buffer for this decoding
+            if decode_len < byte_count:
+                #print '-- fail 2'
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            frame_pos = decode_pos + 2
+            frame_id = b[frame_pos]
+
+            # invalid frame id
+            if frame_id not in FrameID.__dict__.itervalues():
+                #print '-- fail 3'
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            crc_pos   = frame_pos  + frame_size
+            crc = b[crc_pos:crc_pos + 2]
+            entire_pkt = b[decode_pos:frame_pos + frame_size + 2]
+
+            # CRC failure
+            crc_check = crc_fn(bytes(entire_pkt))
+            if crc_check != 0:
+                #print '-- fail 4'
+                decode_pos += 1
+                decode_len -= 1
+                continue
+
+            # valid packet? wow.
+            rdy_pkts.append(b[frame_pos:frame_pos + frame_size])
+
+            # number of invalid bytes discarded to make this work.
+            discard_amt += decode_pos - good_pos
+
+            # advance to right after the decoded packet.
+            decode_pos += byte_count
+            decode_len -= byte_count
+
+            # the decode position that will be started from next time
+            good_pos     = decode_pos
+
+        # discard this packet from buffer. also discard everything prior.
+        del b[0:good_pos]
+        self.discard_stat += discard_amt
+
+        return rdy_pkts
+
+    def add_listener(self, cb):
+        c = self.recv_cbs
+        self.cb_lock.acquire()
+        r = len(c)
+        c.append(cb)
+        self.cb_lock.release()
+        return r
+    
+    def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
+        # XXX: Really, python?
+        # 'def x(*a, b=2)' is not allowed.
+        if 'timeout' not in only_timeout:
+            timeout = 0.5
+        else:
+            timeout = only_timeout['timeout']
+        s = _one_msg_stall(*expected_frame_id)
+        self.add_listener(s.cb())
+
+        r = s.wait(timeout)
+
+        if (r == None):
+            raise IOError('Did not recv frame_id {0} within time limit.'.format(expected_frame_id))
+        else:
+            # XXX: change this when len(expected_frame_id) = 1?
+            return (r[0], r[1:])
+
     def __init__(self, path, baud):
         self.fp = Serial(
             port     = path,
@@ -219,6 +421,16 @@ class FieldforceTCM:
         )
         # CRC-16 with generator polynomial X^16 + X^12 + X^5 + 1.
         self.crc = crcmod.mkCrcFun(0b10001000000100001, 0, False)
+        self.recv_cbs = []
+        self.cb_lock = threading.Lock()
+
+        self.decode_pos = 0
+        self.discard_stat = 0
+        self.recv_buf = bytearray()
+
+        self.read_th = rt = threading.Thread(target=self.reader())
+        rt.daemon = True
+        rt.start()
 
     def close(self):
         self.fp.flush()
@@ -227,37 +439,11 @@ class FieldforceTCM:
     def _send(self, fmt):
         self.fp.write(fmt)
 
-    def _recv(self, fmt):
-        struct_fmt = fmt if type(fmt) == Struct else Struct(fmt)
-        data = self.fp.read(struct_fmt.size)
-        return struct_fmt.unpack(data)
-
-    def _sendMessage(self, frame_id, payload):
+    def _sendMessage(self, frame_id, payload=b''):
         count = len(payload) + 5
         head = struct.pack('>HB{0}s'.format(len(payload)), count, frame_id, payload)
         tail = struct.pack('>H', self.crc(head))
         self._send(head + tail)
-
-    def _recvMessage(self):
-        (count, ) = self._recv('>H')
-        payload_count = count - 5
-        fid, payload, crc = self._recv('>B{0}sH'.format(payload_count))
-
-        check = struct.pack('>HB{0}s'.format(payload_count), count, fid, payload)
-        crc_check = self.crc(check)
-
-        if crc == crc_check:
-            return fid, payload
-        else:
-            raise IOError('CRC-16 checksum failed.')
-
-    def _recvSpecificMessage(self, expected_frame_id):
-        frame_id, data = self._recvMessage()
-
-        if frame_id == expected_frame_id:
-            return data
-        else:
-            raise IOError('Response has unexpected frame id: {0}.'.format(frame_id))
 
     def _createDatum(self, data):
         for component in self.Datum._fields:
@@ -269,8 +455,8 @@ class FieldforceTCM:
         """
         Query the module's type and firmware revision number.
         """
-        self._sendMessage(FrameID.kGetModInfo, b'')
-        payload = self._recvSpecificMessage(FrameID.kModInfoResp)
+        self._sendMessage(FrameID.kGetModInfo)
+        (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
 
     def getData(self):
@@ -278,8 +464,8 @@ class FieldforceTCM:
         Query a single packet of data that containing the components specified
         by setDataComponents(). All other components are set to zero.
         """
-        self._sendMessage(FrameID.kGetData, b'')
-        payload = self._recvSpecificMessage(FrameID.kDataResp)
+        self._sendMessage(FrameID.kGetData)
+        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
         comp_index = 0
@@ -310,6 +496,12 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
         self._recvSpecificMessage(FrameID.kSetConfigDone)
 
+    def takeUserCalSample(self):
+        """
+        Commands the module to take a sample during user calibration.
+        """
+        self._sendMessage(FrameID.kTakeUserCalSample)
+
     def getConfig(self, config_id):
         """
         Get the value of a single configuration value based on config_id.
@@ -317,7 +509,7 @@ class FieldforceTCM:
         payload_id = self.struct_uint8.pack(config_id)
         self._sendMessage(FrameID.kGetConfig, payload_id)
 
-        response = self._recvSpecificMessage(FrameID.kConfigResp)
+        (_, response) = self._recvSpecificMessage(FrameID.kConfigResp)
         (response_id, ) = self.struct_uint8.unpack(response[0])
 
         if response_id == config_id:
@@ -354,7 +546,7 @@ class FieldforceTCM:
         payload_request  = struct.pack('>BB', 3, 1)
         self._sendMessage(FrameID.kGetParam, payload_request)
 
-        payload_response = self._recvSpecificMessage(FrameID.kParamResp)
+        (_, payload_response) = self._recvSpecificMessage(FrameID.kParamResp)
         param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
 
         if param_id != 3:
@@ -396,8 +588,8 @@ class FieldforceTCM:
         Gets the current acquisition mode. See setAcquisitionParams() for more
         information.
         """
-        self._sendMessage(FrameID.kGetAcqParams, b"")
-        payload  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
+        self._sendMessage(FrameID.kGetAcqParams)
+        (_, payload)  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
@@ -407,14 +599,14 @@ class FieldforceTCM:
         and use stopStreaming() when done. Streaming must be stopped before any
         other commands can be used.
         """
-        self._sendMessage(FrameID.kStartIntervalMode, b'')
+        self._sendMessage(FrameID.kStartIntervalMode)
 
     def stopStreaming(self):
         """
         Stops streaming data; companion of startStreaming(). Streaming must be
         stopped before any other commands can be used.
         """
-        self._sendMessage(FrameID.kStopIntervalMode, b'')
+        self._sendMessage(FrameID.kStopIntervalMode)
         self.fp.flushInput()
 
     def powerUp(self):
@@ -429,7 +621,7 @@ class FieldforceTCM:
         """
         Power down the sensor down.
         """
-        self._sendMessage(FrameID.kPowerDown, b'')
+        self._sendMessage(FrameID.kPowerDown)
         self._recvSpecificMessage(FrameID.kPowerDownDone)
 
     def save(self):
@@ -439,8 +631,8 @@ class FieldforceTCM:
         paired with any configuration options (e.g. calibration) that are
         intended to be persistant.
         """
-        self._sendMessage(FrameID.kSave, b'')
-        response = self._recvSpecificMessage(FrameID.kSaveDone)
+        self._sendMessage(FrameID.kSave)
+        (_, response) = self._recvSpecificMessage(FrameID.kSaveDone)
         (code, ) = self.struct_uint16.unpack(response)
 
         if code != 0:
@@ -454,31 +646,28 @@ class FieldforceTCM:
         payload_mode = self.struct_uint32.pack(mode)
         self._sendMessage(FrameID.kStartCal, payload_mode)
 
-    def getCalibrationStatus(self):
+
+    def getCalibrationStatus(self, timeout=1):
         """
         Blocks waiting for a calibration update from the sensor. This returns a
         tuple where the first elements is a boolean that indicates whether the
         calibration is complete.
         """
-        while True:
-            frame_id, message = self._recvMessage()
+        frame_id, message = self._recvSpecificMessage(FrameID.kUserCalSampCount, FrameID.kUserCalScore, timeout=timeout)
 
-            # One UserCalSampCount message is generated for each recorded
-            # sample. This continues until the calibration has converged or the
-            # maximum number of points have been collected.
-            if frame_id == FrameID.kUserCalSampCount:
-                (sample_num, ) = self.struct_uint32.unpack(message)
-                return (False, sample_num)
-            # Calibration accuracy is reported in a single UserCalScore message
-            # once calibration is complete.
-            elif frame_id == FrameID.kUserCalScore:
-                scores_raw = struct.unpack('>6f', message)
-                scores     = self.CalScores(*scores_raw)
-                return (True, scores)
-            # Ignore data updates
-            elif frame_id == FrameID.kDataResp:
-                continue
-            else:
-                raise IOError('Unexpected frame id: {0}.'.format(frame_id))
+        # One UserCalSampCount message is generated for each recorded
+        # sample. This continues until the calibration has converged or the
+        # maximum number of points have been collected.
+        if frame_id == FrameID.kUserCalSampCount:
+            (sample_num, ) = self.struct_uint32.unpack(message)
+            return (False, sample_num)
+        # Calibration accuracy is reported in a single UserCalScore message
+        # once calibration is complete.
+        elif frame_id == FrameID.kUserCalScore:
+            scores_raw = struct.unpack('>6f', message)
+            scores     = self.CalScores(*scores_raw)
+            return (True, scores)
+        else:
+            raise IOError('Unexpected frame id: {0}.'.format(frame_id))
 
 # vim: set et sw=4 ts=4:
