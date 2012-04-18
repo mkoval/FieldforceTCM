@@ -185,6 +185,11 @@ class _one_msg_stall:
         c.release()
         return it
 
+class TimeoutException(Exception):
+    def __init__(self, msg, time=None):
+        Exception.__init__(self, msg)
+        self.time=time
+
 class FieldforceTCM:
     Component = namedtuple('Component', [
         'name', 'struct'
@@ -318,7 +323,6 @@ class FieldforceTCM:
         decode_len  = len(b)
         rdy_pkts = []
 
-        #print repr(bytes(b))
         # min packet = 2 (byte_count) + 1 (frame id) + 2 (crc) = 5
         #attempt_ct = 0
         #print decode_len
@@ -381,16 +385,28 @@ class FieldforceTCM:
         del b[0:good_pos]
         self.discard_stat += discard_amt
 
+        #print 'decode:', repr(bytes(b))
         return rdy_pkts
+
+    def remove_listener(self, r):
+        c = self.recv_cbs
+        l = self.cb_lock
+        l.acquire()
+        try:
+            # FIXME: linear search.
+            c.remove(r)
+        except Exception:
+            pass
+        l.release()
 
     def add_listener(self, cb):
         c = self.recv_cbs
-        self.cb_lock.acquire()
-        r = len(c)
+        l = self.cb_lock
+        l.acquire()
         c.append(cb)
-        self.cb_lock.release()
-        return r
-    
+        l.release()
+        return cb
+
     def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
         # XXX: Really, python?
         # 'def x(*a, b=2)' is not allowed.
@@ -399,15 +415,17 @@ class FieldforceTCM:
         else:
             timeout = only_timeout['timeout']
         s = _one_msg_stall(*expected_frame_id)
-        self.add_listener(s.cb())
+        t = self.add_listener(s.cb())
 
         r = s.wait(timeout)
 
+        self.remove_listener(t)
+
         if (r == None):
-            raise IOError('Did not recv frame_id {0} within time limit.'.format(expected_frame_id))
+            raise TimeoutException('Did not recv frame_id {0} within time limit.'.format(expected_frame_id), timeout)
         else:
             # XXX: change this when len(expected_frame_id) = 1?
-            return (r[0], r[1:])
+            return (ord(r[0]), r[1:])
 
     def __init__(self, path, baud):
         self.fp = Serial(
@@ -456,13 +474,11 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kGetModInfo)
         (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
-
-    def getData(self):
+    
+    def readData(self):
         """
-        Query a single packet of data that containing the components specified
-        by setDataComponents(). All other components are set to zero.
+        Read a single DataResp frame
         """
-        self._sendMessage(FrameID.kGetData)
         (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
@@ -482,6 +498,14 @@ class FieldforceTCM:
             comp_index += 1
 
         return self._createDatum(data)
+
+    def getData(self):
+        """
+        Query a single packet of data that containing the components specified
+        by setDataComponents(). All other components are set to zero.
+        """
+        self._sendMessage(FrameID.kGetData)
+        return self.readData()
 
     def setConfig(self, config_id, value):
         """
@@ -599,13 +623,25 @@ class FieldforceTCM:
         """
         self._sendMessage(FrameID.kStartIntervalMode)
 
+    def stopAll(self):
+        """
+        Stop all modes which result in periodic messages
+        """
+        self.stopStreaming()
+        self.stopCalibration()
+
     def stopStreaming(self):
         """
         Stops streaming data; companion of startStreaming(). Streaming must be
         stopped before any other commands can be used.
         """
         self._sendMessage(FrameID.kStopIntervalMode)
-        self.fp.flushInput()
+    
+    def stopCalibration(self):
+        """
+        Stops calibration;
+        """
+        self._sendMessage(FrameID.kStopCal)
 
     def powerUp(self):
         """
@@ -645,7 +681,7 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kStartCal, payload_mode)
 
 
-    def getCalibrationStatus(self, timeout=5):
+    def getCalibrationStatus(self, timeout=15):
         """
         Blocks waiting for a calibration update from the sensor. This returns a
         tuple where the first elements is a boolean that indicates whether the
@@ -656,16 +692,12 @@ class FieldforceTCM:
         # One UserCalSampCount message is generated for each recorded
         # sample. This continues until the calibration has converged or the
         # maximum number of points have been collected.
-        print 'getCalibrationStatus frame_id={0}, len={1}, data={2}'.format(
-                    repr(frame_id), len(message), repr(message))
         if frame_id == FrameID.kUserCalSampCount:
-            print '-- a'
             (sample_num, ) = self.struct_uint32.unpack(message)
             return (False, sample_num)
         # Calibration accuracy is reported in a single UserCalScore message
         # once calibration is complete.
         elif frame_id == FrameID.kUserCalScore:
-            print '-- b'
             scores_raw = struct.unpack('>6f', message)
             scores     = self.CalScores(*scores_raw)
             return (True, scores)

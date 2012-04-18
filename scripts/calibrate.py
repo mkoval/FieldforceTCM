@@ -48,11 +48,18 @@ def main():
     #pygame.mixer.init()
     #exit('Could not open {0}, {1}'.format(fname, e))
 
+    ver = compass.getModelInfo()
+    print('Found Fieldforce TCM: {0}'.format(ver))
+
+    auto = True
+
+    compass.stopAll()
+
     # Using the kSetParam command, set the number of tap filters to 32.
     compass.setFilter(32)
     # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
     #  generally recommended, but “True” may be more convenient.
-    compass.setConfig(Configuration.kUserCalAutoSampling, False)
+    compass.setConfig(Configuration.kUserCalAutoSampling, auto)
     # Using the kSetConfig command, set kCoeffCopySet (magnetometer
     #   calibration) and/or kAccelCoeffCopySet (accelerometer calibration).
     #   These fields allow the user to save multiple sets of calibration
@@ -66,7 +73,7 @@ def main():
     # Calibration; and at least 18 for Accel Only Calibration and
 
     #Accel and Mag Calibration.
-    compass.setConfig(Configuration.kUserCalNumPoints, 32)
+    compass.setConfig(Configuration.kUserCalNumPoints, 12)
     # Initiate a calibration using the kStartCal command. Note that this
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
@@ -90,14 +97,15 @@ def main():
         while True:
             try:
                 done, data = compass.getCalibrationStatus()
-                print('Recieved calibration data {0} {1}'.format(repr(done), repr(data)))
                 if done:
                     event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
                 else:
                     event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
-            except IOError as e:
+            except TimeoutException as e:
                 # Timed out.
                 print('Warning: wait for calibration status timed out')
+            except IOError as e:
+                print(repr(e))
 
     cr = threading.Thread(target=compass_reader)
     cr.daemon = True
@@ -112,22 +120,19 @@ def main():
     kr.start()
 
     running  = True
-    auto     = False
     in_calib = True
     save_q   = False
     while running:
-        print('waiting for event')
         ev = event.wait()
         if ev.type == COMPASS_IN_CALIB:
             print('Got a measurment')
             print(repr(ev.prog_data))
         elif ev.type == COMPASS_CALIB_DONE:
-            print('Calibration done')
-            print(repr(ev.cal_score))
+            print('Calib data: {0}'.format(repr(ev.cal_score)))
         elif ev.type == KEYS:
             if   ev.key == 'Q' or ev.key == 'q':
                 running = False
-            elif ev.key == ' ':
+            elif ev.key == ' ' or ev.key == '\n':
                 if   not auto and in_calib:
                     compass.takeUserCalSample()
                 elif not in_calib:
