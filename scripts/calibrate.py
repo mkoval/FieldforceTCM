@@ -34,27 +34,38 @@ spath.insert(0, "{0}/../src".format(_us))
 from fieldforce_tcm import *
 spath.pop(0)
 
+import termios
 import threading
 from event import *
+from time import time as _time
 
-def main():
-    #if not pygame.mixer: print('Warning, sound disabled')
-    if len(argv) < 2:
-        exit('usage: {0} <serial port>'.format(argv[0]))
+_stdin = sys.stdin.fileno()
+_termios_settings = None
 
-    fname   = argv[1]
-    compass = FieldforceTCM(fname, 38400)
-    event   = EventQueue()
-    #pygame.mixer.init()
-    #exit('Could not open {0}, {1}'.format(fname, e))
+def _term_save():
+    global _termios_settings
+    _termios_settings = termios.tcgetattr(_stdin)
 
-    ver = compass.getModelInfo()
-    print('Found Fieldforce TCM: {0}'.format(ver))
+def _term_restore():
+    termios.tcsetattr(_stdin, termios.TCSANOW, _termios_settings)
 
-    auto = True
+def _term_echo(on):
+    it = termios.tcgetattr(_stdin)
+    if on:
+        it[3] |= termios.ECHO
+    else:
+        it[3] &= ~ termios.ECHO
+    termios.tcsetattr(_stdin, termios.TCSANOW, it)
 
-    compass.stopAll()
+def _term_buffer(on):
+    it = termios.tcgetattr(_stdin)
+    if on:
+        it[3] |= termios.ICANON
+    else:
+        it[3] &= ~ termios.ICANON
+    termios.tcsetattr(_stdin, termios.TCSANOW, it)
 
+def init_for_calib(compass, auto, num_samples):
     # Using the kSetParam command, set the number of tap filters to 32.
     compass.setFilter(32)
     # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
@@ -73,7 +84,7 @@ def main():
     # Calibration; and at least 18 for Accel Only Calibration and
 
     #Accel and Mag Calibration.
-    compass.setConfig(Configuration.kUserCalNumPoints, 12)
+    compass.setConfig(Configuration.kUserCalNumPoints, num_samples)
     # Initiate a calibration using the kStartCal command. Note that this
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
@@ -89,6 +100,17 @@ def main():
     #   information will be output from the module, and this can be
     #   monitored using kDataResp.
 
+def main():
+    #if not pygame.mixer: print('Warning, sound disabled')
+    if len(argv) < 2:
+        exit('usage: {0} <serial port>'.format(argv[0]))
+
+    fname   = argv[1]
+    compass = FieldforceTCM(fname, 38400)
+    event   = EventQueue()
+    #pygame.mixer.init()
+    #exit('Could not open {0}, {1}'.format(fname, e))
+
     COMPASS_IN_CALIB   = 0
     COMPASS_CALIB_DONE = 1
     KEYS               = 2
@@ -98,12 +120,13 @@ def main():
             try:
                 done, data = compass.getCalibrationStatus()
                 if done:
-                    event.post(Event(COMPASS_IN_CALIB,   prog_data = data))
+                    event.post(Event(COMPASS_CALIB_DONE, score = data))
                 else:
-                    event.post(Event(COMPASS_CALIB_DONE, cal_score = data))
+                    event.post(Event(COMPASS_IN_CALIB, sample_num = data))
             except TimeoutException as e:
                 # Timed out.
-                print('Warning: wait for calibration status timed out')
+                #print('calib')
+                pass
             except IOError as e:
                 print(repr(e))
 
@@ -111,44 +134,76 @@ def main():
     cr.daemon = True
     cr.start()
 
-
     def keyboard_reader():
+        _term_buffer(False)
+        _term_echo(False)
         while True:
             event.post(Event(KEYS, key=sys.stdin.read(1)))
     kr = threading.Thread(target=keyboard_reader)
     kr.daemon = True
     kr.start()
 
+    ver = compass.getModelInfo()
+    print('Found Fieldforce TCM: {0}'.format(ver))
+
+    num_samples = 12
+    auto = True
+
+    compass.stopAll()
+    init_for_calib(compass, auto, num_samples)
+
+    started_once = True
     running  = True
     in_calib = True
-    save_q   = False
+    sampling_done = False
+    have_calib = False
+    old_time = _time()
     while running:
         ev = event.wait()
         if ev.type == COMPASS_IN_CALIB:
-            print('Got a measurment')
-            print(repr(ev.prog_data))
+            new_time = _time()
+            print('Sample #{0} ({1} seconds)'.format(ev.sample_num,new_time - old_time))
+            old_time = new_time
+            if ev.sample_num == num_samples:
+                sampling_done = True
+                print('Calculating calibration... ')
         elif ev.type == COMPASS_CALIB_DONE:
-            print('Calib data: {0}'.format(repr(ev.cal_score)))
+            new_time = _time()
+            if not sampling_done:
+                print('unexpected calibration completion')
+            print('Calibration complete: {0}'.format(repr(ev.cal_score)))
+            print('Calculated in {0} seconds'.format(new_time - old_time))
+            old_time = new_time
+            in_calib = False
+            have_calib = True
         elif ev.type == KEYS:
             if   ev.key == 'Q' or ev.key == 'q':
+                compass.stopCalibration()
                 running = False
             elif ev.key == ' ' or ev.key == '\n':
                 if   not auto and in_calib:
                     compass.takeUserCalSample()
                 elif not in_calib:
+                    if not started_once:
+                        init_for_calib(compass, auto, num_samples)
                     compass.startCalibration()
             elif ev.key == 's' or ev.key == 'S':
-                    # if deciding to save, save
-		if save_q:
-                        save_q = False
-                        compass.save()
-            elif ev.key == 'a' or ev.key == 'A':
-                auto = not auto
-                compass.setConfig(Configuration.kUserCalAutoSampling, auto)
-                if auto:
-                    print('auto measurments ON')
+                # if deciding to save, save
+                if have_calib:
+                    compass.save()
+                    print('saving...')
                 else:
-                    print('auto measurments OFF')
+                    print('no calibration avaliable to save')
+            elif ev.key == 'a' or ev.key == 'A':
+                if not in_calib:
+                    auto = not auto
+                    compass.setConfig(Configuration.kUserCalAutoSampling, auto)
+                    if auto:
+                        print('auto measurments ON')
+                    else:
+                        print('auto measurments OFF')
+            elif ev.key == '?':
+                print('lol.')
             else:
                 print('unknown key = {0}'.format(repr(ev.key)))
         else:
@@ -160,4 +215,8 @@ def main():
 #   coefficients using kSave.
 
 if __name__ == '__main__':
-    main()
+    _term_save()
+    try:
+        main()
+    finally:
+        _term_restore()
