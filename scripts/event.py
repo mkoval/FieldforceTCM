@@ -29,6 +29,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from collections import deque
 import threading
 
+class Signal:
+    def __init__(self):
+        self.last  = None
+        self.first = None
+
+    def attach(self, connection):
+        self.last.attach(connection)
+
 class Event:
 	def __init__(self, etype, **kws):
 		self.type = etype
