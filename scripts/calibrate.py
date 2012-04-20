@@ -189,6 +189,7 @@ def main():
                 elif not in_calib:
                     if not started_once:
                         init_for_calib(compass, auto, num_samples)
+                    print('Restarting calib')
                     compass.startCalibration()
             elif ev.key == 's' or ev.key == 'S':
                 # if deciding to save, save
