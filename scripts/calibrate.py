@@ -147,8 +147,9 @@ def main():
     print('Found Fieldforce TCM: {0}'.format(ver))
 
     num_samples = 12
-    auto = True
-    calib_type = Calibration.kLimitedTiltCalibraion
+    auto = False
+    #calib_type = Calibration.kLimitedTiltCalibraion
+    calib_type = Calibration.k2DCalibration
 
     compass.stopAll()
     init_for_calib(compass, auto, num_samples, calib_type)
