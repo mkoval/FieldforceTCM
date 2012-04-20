@@ -162,7 +162,7 @@ def main():
         ev = event.wait()
         if ev.type == COMPASS_IN_CALIB:
             new_time = _time()
-            print('Sample #{0} ({1} seconds)'.format(ev.sample_num,new_time - old_time))
+            print('Sample #{0} ({1} seconds)'.format(ev.sample_num, new_time - old_time))
             old_time = new_time
             if ev.sample_num == num_samples:
                 sampling_done = True
@@ -171,7 +171,7 @@ def main():
             new_time = _time()
             if not sampling_done:
                 print('unexpected calibration completion')
-            print('Calibration complete: {0}'.format(repr(ev.cal_score)))
+            print('Calibration complete: {0}'.format(repr(ev.score)))
             print('Calculated in {0} seconds'.format(new_time - old_time))
             old_time = new_time
             in_calib = False

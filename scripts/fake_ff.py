@@ -43,7 +43,7 @@ def main():
 
 	ff = FieldforceTCM(argv[1], 38400)
 	eq = EventQueue()
-	
+
 	PKT = 0
 	def pkt_cb(rdy_pkts):
 		for pkt in rdy_pkts:
@@ -51,6 +51,10 @@ def main():
 	ff.add_listener(pkt_cb)
 
 	ff_config = dict()
+
+    def send_th():
+        while True:
+            pass
 
 	while True:
 		ev = eq.wait()
