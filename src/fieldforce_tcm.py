@@ -682,7 +682,7 @@ class FieldforceTCM:
         about the necessary setup for each calibration mode.
         When mode = None, the last calibration mode used is repeated.
         """
-        if mode = None:
+        if mode == None:
             self._sendMessage(FrameID.kStartCal)
         else:
             payload_mode = self.struct_uint32.pack(mode)
