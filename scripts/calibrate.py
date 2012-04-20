@@ -167,6 +167,7 @@ def main():
             new_time = _time()
             print('Sample #{0} ({1} seconds)'.format(ev.sample_num, new_time - old_time))
             old_time = new_time
+            in_calib = True
             if ev.sample_num == num_samples:
                 sampling_done = True
                 print('Calculating calibration... ')
