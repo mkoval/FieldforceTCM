@@ -65,7 +65,7 @@ def _term_buffer(on):
         it[3] &= ~ termios.ICANON
     termios.tcsetattr(_stdin, termios.TCSANOW, it)
 
-def init_for_calib(compass, auto, num_samples):
+def init_for_calib(compass, auto, num_samples, calib_type):
     # Using the kSetParam command, set the number of tap filters to 32.
     compass.setFilter(32)
     # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
@@ -89,7 +89,7 @@ def init_for_calib(compass, auto, num_samples):
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
 
-    compass.startCalibration(Calibration.kLimitedTiltCalibraion)
+    compass.startCalibration(calib_type)
     print('calibration started')
     # Follow the appropriate calibration procedure discussed in Sections
     #   6.2.1 to 6.2.6. If kUserCalAutoSampling was set to “False”, then
@@ -148,9 +148,11 @@ def main():
 
     num_samples = 12
     auto = True
+    calib_type = Calibration.kLimitedTiltCalibraion
 
     compass.stopAll()
-    init_for_calib(compass, auto, num_samples)
+    init_for_calib(compass, auto, num_samples, calib_type)
+
 
     started_once = True
     running  = True

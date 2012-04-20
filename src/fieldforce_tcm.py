@@ -676,13 +676,17 @@ class FieldforceTCM:
         if code != 0:
             raise IOError('Save failed with error code {0}.'.format(code))
 
-    def startCalibration(self, mode):
+    def startCalibration(self, mode=None):
         """
         Starts calibration. See the FieldForce TCM User Manual for details
         about the necessary setup for each calibration mode.
+        When mode = None, the last calibration mode used is repeated.
         """
-        payload_mode = self.struct_uint32.pack(mode)
-        self._sendMessage(FrameID.kStartCal, payload_mode)
+        if mode = None:
+            self._sendMessage(FrameID.kStartCal)
+        else:
+            payload_mode = self.struct_uint32.pack(mode)
+            self._sendMessage(FrameID.kStartCal, payload_mode)
 
 
     def getCalibrationStatus(self, timeout=15):
