@@ -304,10 +304,14 @@ class FieldforceTCM:
         cbs = self.recv_cbs
         lock = self.cb_lock
         lock.acquire()
+        x = []
         for i in range(0, len(cbs)):
             if cbs[i](rdy_pkts):
                 # A callback returning true is removed.
-                del cbs[i]
+                # XXX: Can't remove while iterating over it.
+                x.append(i)
+        for it in x:
+            del cbs[it]
         lock.release()
 
     def _decode(self):
