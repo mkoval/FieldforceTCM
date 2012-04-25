@@ -198,7 +198,7 @@ class FieldforceTCM:
         'Type', 'Revision'
     ])
     CalScores = namedtuple('CalScores', [
-        'CalScore', 'CalParam2', 'AccelCalScore', 'DistError',
+        'MagCalScore', 'CalParam2', 'AccelCalScore', 'DistError',
         'TiltError', 'TiltRange'
     ])
     AcqParams = namedtuple('AcqParams', [
@@ -209,6 +209,9 @@ class FieldforceTCM:
         'PAligned', 'RAligned', 'IZAligned',
         'PAngle', 'RAngle', 'KXAligned', 'KYAligned', 'KZAligned'
     ])
+
+    good_cal_score = CalScores('< 1', 'ignore (pni reserved)', '< 1',
+            '< 1', '< 1', 'angle of tilt' )
 
     struct_uint8   = Struct('>B')
     struct_uint16  = Struct('>H')
