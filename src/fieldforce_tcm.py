@@ -207,7 +207,7 @@ class FieldforceTCM:
     Datum     = namedtuple('Datum', [
         'Heading', 'Temperature', 'Distortion', 'CalStatus',
         'PAligned', 'RAligned', 'IZAligned',
-        'PAngle', 'RAngle', 'KXAligned', 'KYAligned', 'KZAligned'
+        'PAngle', 'RAngle', 'XAligned', 'YAligned', 'ZAligned'
     ])
 
     good_cal_score = CalScores('< 1', 'ignore (pni reserved)', '< 1',
