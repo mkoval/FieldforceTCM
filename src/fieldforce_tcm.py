@@ -118,22 +118,22 @@ class Configuration:
     kAccelCoeffCopySet   = 19
 
 class Orientation:
-    kOrientationSTD0     = 1
-    kOrientationXUP0     = 2
-    kOrientationYUP0     = 3
-    kOrientationSTD90    = 4
-    kOrientationSTD180   = 5
-    kOrientationSTD270   = 6
-    kOrientationZDOWN0   = 7
-    kOrientationXUP90    = 8
-    kOrientationXUP180   = 9
-    kOrientationXUP270   = 10
-    kOrientationYUP90    = 11
-    kOrientationYUP180   = 12
-    kOrientationYUP270   = 13
-    kOrientationZDOWN90  = 14
-    kOrientationZDOWN180 = 15
-    kOrientationZDOWN270 = 16
+    STD_0      = 1
+    X_UP_0     = 2
+    Y_UP_0     = 3
+    STD_90     = 4
+    STD_180    = 5
+    STD_270    = 6
+    Z_DOWN_0   = 7
+    X_UP_90    = 8
+    X_UP_180   = 9
+    X_UP_270   = 10
+    Y_UP_90    = 11
+    Y_UP_180   = 12
+    Y_UP_270   = 13
+    Z_DOWN_90  = 14
+    Z_DOWN_180 = 15
+    Z_DOWN_270 = 16
 
 class Calibration:
     kFullRangeCalibration     = 10
@@ -198,7 +198,7 @@ class FieldforceTCM:
         'Type', 'Revision'
     ])
     CalScores = namedtuple('CalScores', [
-        'CalScore', 'CalParam2', 'AccelCalScore', 'DistError',
+        'MagCalScore', 'CalParam2', 'AccelCalScore', 'DistError',
         'TiltError', 'TiltRange'
     ])
     AcqParams = namedtuple('AcqParams', [
@@ -207,8 +207,11 @@ class FieldforceTCM:
     Datum     = namedtuple('Datum', [
         'Heading', 'Temperature', 'Distortion', 'CalStatus',
         'PAligned', 'RAligned', 'IZAligned',
-        'PAngle', 'RAngle', 'KXAligned', 'KYAligned', 'KZAligned'
+        'PAngle', 'RAngle', 'XAligned', 'YAligned', 'ZAligned'
     ])
+
+    good_cal_score = CalScores('< 1', 'ignore (pni reserved)', '< 1',
+            '< 1', '< 1', 'angle of tilt' )
 
     struct_uint8   = Struct('>B')
     struct_uint16  = Struct('>H')
@@ -522,6 +525,12 @@ class FieldforceTCM:
         self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
         self._recvSpecificMessage(FrameID.kSetConfigDone)
 
+    def setOrientation(self, orientation):
+        """
+        Set the orientation of the compass
+        """
+        self.setConfig(Configuration.kMountingRef, orientation)
+
     def takeUserCalSample(self):
         """
         Commands the module to take a sample during user calibration.
@@ -676,13 +685,17 @@ class FieldforceTCM:
         if code != 0:
             raise IOError('Save failed with error code {0}.'.format(code))
 
-    def startCalibration(self, mode):
+    def startCalibration(self, mode=None):
         """
         Starts calibration. See the FieldForce TCM User Manual for details
         about the necessary setup for each calibration mode.
+        When mode = None, the last calibration mode used is repeated.
         """
-        payload_mode = self.struct_uint32.pack(mode)
-        self._sendMessage(FrameID.kStartCal, payload_mode)
+        if mode == None:
+            self._sendMessage(FrameID.kStartCal)
+        else:
+            payload_mode = self.struct_uint32.pack(mode)
+            self._sendMessage(FrameID.kStartCal, payload_mode)
 
 
     def getCalibrationStatus(self, timeout=15):

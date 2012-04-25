@@ -65,7 +65,7 @@ def _term_buffer(on):
         it[3] &= ~ termios.ICANON
     termios.tcsetattr(_stdin, termios.TCSANOW, it)
 
-def init_for_calib(compass, auto, num_samples):
+def init_for_calib(compass, auto, num_samples, calib_type):
     # Using the kSetParam command, set the number of tap filters to 32.
     compass.setFilter(32)
     # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
@@ -89,7 +89,11 @@ def init_for_calib(compass, auto, num_samples):
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
 
-    compass.startCalibration(Calibration.kLimitedTiltCalibraion)
+    # set the compass orientation.
+    compass.setOrientation(Orientation.Y_UP_0)
+
+    compass.startCalibration(calib_type)
+
     print('calibration started')
     # Follow the appropriate calibration procedure discussed in Sections
     #   6.2.1 to 6.2.6. If kUserCalAutoSampling was set to “False”, then
@@ -147,10 +151,13 @@ def main():
     print('Found Fieldforce TCM: {0}'.format(ver))
 
     num_samples = 12
-    auto = True
+    auto = False
+    calib_type = Calibration.kLimitedTiltCalibraion
+    #calib_type = Calibration.k2DCalibration
 
     compass.stopAll()
-    init_for_calib(compass, auto, num_samples)
+    init_for_calib(compass, auto, num_samples, calib_type)
+
 
     started_once = True
     running  = True
@@ -164,6 +171,7 @@ def main():
             new_time = _time()
             print('Sample #{0} ({1} seconds)'.format(ev.sample_num, new_time - old_time))
             old_time = new_time
+            in_calib = True
             if ev.sample_num == num_samples:
                 sampling_done = True
                 print('Calculating calibration... ')
@@ -172,6 +180,7 @@ def main():
             if not sampling_done:
                 print('unexpected calibration completion')
             print('Calibration complete: {0}'.format(repr(ev.score)))
+            print('Good cal scores: {0}'.format(repr(compass.good_cal_score)))
             print('Calculated in {0} seconds'.format(new_time - old_time))
             old_time = new_time
             in_calib = False
@@ -186,6 +195,7 @@ def main():
                 elif not in_calib:
                     if not started_once:
                         init_for_calib(compass, auto, num_samples)
+                    print('Restarting calib')
                     compass.startCalibration()
             elif ev.key == 's' or ev.key == 'S':
                 # if deciding to save, save
