@@ -89,7 +89,11 @@ def init_for_calib(compass, auto, num_samples, calib_type):
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
 
+    # set the compass orientation.
+    compass.setOrientation(Orientation.Y_UP_0)
+
     compass.startCalibration(calib_type)
+
     print('calibration started')
     # Follow the appropriate calibration procedure discussed in Sections
     #   6.2.1 to 6.2.6. If kUserCalAutoSampling was set to “False”, then
@@ -148,8 +152,8 @@ def main():
 
     num_samples = 12
     auto = False
-    #calib_type = Calibration.kLimitedTiltCalibraion
-    calib_type = Calibration.k2DCalibration
+    calib_type = Calibration.kLimitedTiltCalibraion
+    #calib_type = Calibration.k2DCalibration
 
     compass.stopAll()
     init_for_calib(compass, auto, num_samples, calib_type)
