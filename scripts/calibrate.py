@@ -180,7 +180,7 @@ def main():
             if not sampling_done:
                 print('unexpected calibration completion')
             print('Calibration complete: {0}'.format(repr(ev.score)))
-            print('Good cal scores: {0}'.format(repr(ff.good_cal_score)))
+            print('Good cal scores: {0}'.format(repr(compass.good_cal_score)))
             print('Calculated in {0} seconds'.format(new_time - old_time))
             old_time = new_time
             in_calib = False
