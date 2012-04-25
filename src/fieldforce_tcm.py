@@ -118,22 +118,22 @@ class Configuration:
     kAccelCoeffCopySet   = 19
 
 class Orientation:
-    kOrientationSTD0     = 1
-    kOrientationXUP0     = 2
-    kOrientationYUP0     = 3
-    kOrientationSTD90    = 4
-    kOrientationSTD180   = 5
-    kOrientationSTD270   = 6
-    kOrientationZDOWN0   = 7
-    kOrientationXUP90    = 8
-    kOrientationXUP180   = 9
-    kOrientationXUP270   = 10
-    kOrientationYUP90    = 11
-    kOrientationYUP180   = 12
-    kOrientationYUP270   = 13
-    kOrientationZDOWN90  = 14
-    kOrientationZDOWN180 = 15
-    kOrientationZDOWN270 = 16
+    STD_0      = 1
+    X_UP_0     = 2
+    Y_UP_0     = 3
+    STD_90     = 4
+    STD_180    = 5
+    STD_270    = 6
+    Z_DOWN_0   = 7
+    X_UP_90    = 8
+    X_UP_180   = 9
+    X_UP_270   = 10
+    Y_UP_90    = 11
+    Y_UP_180   = 12
+    Y_UP_270   = 13
+    Z_DOWN_90  = 14
+    Z_DOWN_180 = 15
+    Z_DOWN_270 = 16
 
 class Calibration:
     kFullRangeCalibration     = 10
@@ -521,6 +521,12 @@ class FieldforceTCM:
         payload_value = self.config[config_id].struct.pack(value)
         self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
         self._recvSpecificMessage(FrameID.kSetConfigDone)
+
+    def setOrientation(self, orientation):
+        """
+        Set the orientation of the compass
+        """
+        self.setConfig(Configuration.kMountingRef, orientation)
 
     def takeUserCalSample(self):
         """

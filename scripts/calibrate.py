@@ -89,6 +89,9 @@ def init_for_calib(compass, auto, num_samples):
     #   command requires indentifying the type of calibration procedure
     #   (i.e. Full Range, 2D, etc.).
 
+    # set the compass orientation.
+    compass.setOrientation(Orientation.Y_UP_0)
+
     compass.startCalibration(Calibration.kLimitedTiltCalibraion)
     print('calibration started')
     # Follow the appropriate calibration procedure discussed in Sections
