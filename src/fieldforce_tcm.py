@@ -482,11 +482,11 @@ class FieldforceTCM:
         (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
     
-    def readData(self):
+    def readData(self, timeout=None):
         """
         Read a single DataResp frame
         """
-        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
+        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp, timeout=timeout)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
         comp_index = 0
