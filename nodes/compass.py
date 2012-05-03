@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
 Copyright (c) 2012, Michael Koval
+Copyright 2012, Cody Schafer <cpschafer --- gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -37,6 +38,17 @@ from tf import transformations
 inf = float('+inf')
 var = 0.034906585 ** 2
 
+def start_compass(compass):
+    compass.setDataComponents([
+        Component.kHeading,
+        Component.kPAngle,
+        Component.kRAngle,
+        Component.kDistortion,
+        Component.kCalStatus
+    ])
+    compass.setConfig(Configuration.kMountingRef, Orientation.kOrientationYUP180)
+    compass.startStreaming()
+
 def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
@@ -51,22 +63,22 @@ def main():
     ])
 
     compass = FieldforceTCM(path, baud)
-    compass.setDataComponents([
-        Component.kHeading,
-        Component.kPAngle,
-        Component.kRAngle,
-        Component.kDistortion,
-        Component.kCalStatus
-    ])
-    compass.setConfig(Configuration.kMountingRef, Orientation.kOrientationYUP180)
-    compass.startStreaming()
+    start_compass(compass)
 
     warn_distortion  = False
     warn_calibration = False
+    timeout_ct = 0
 
     try:
         while True:
-            datum = compass.getData()
+            try:
+                datum = compass.getData(2)
+            except TimeoutException as e:
+                rospy.logwarn('Wait for data timed out, reseting compass.')
+                timeout_ct += 1
+                compass.stopStreaming()
+                start_compass(compass)
+                continue
             now   = rospy.get_rostime()
 
             if datum.Distortion and not warn_distortion:
@@ -92,7 +104,7 @@ def main():
                 linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
 
             )
-    except Exception, e:
+    except Exception as e:
         compass.stopStreaming()
         compass.close()
         raise e
