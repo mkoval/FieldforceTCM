@@ -292,9 +292,9 @@ class FieldforceTCM:
                 self._wait_and_read_all()
                 rdy_pkts = self._decode()
                 if rdy_pkts:
-                    for pkt in rdy_pkts:
-                        fid = ord(pkt[0])
-                        print 'new pkt: {0} {1}'.format(FrameID.invert[fid], fid)
+                    #for pkt in rdy_pkts:
+                    #    fid = ord(pkt[0])
+                    #    print 'new pkt: {0} {1}'.format(FrameID.invert[fid], fid)
 
                     self._notify_listeners(rdy_pkts)
         return do_it
