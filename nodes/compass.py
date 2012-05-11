@@ -39,6 +39,7 @@ inf = float('+inf')
 var = 0.034906585 ** 2
 
 def start_compass(compass):
+    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.setDataComponents([
         Component.kHeading,
         Component.kPAngle,
@@ -46,7 +47,7 @@ def start_compass(compass):
         Component.kDistortion,
         Component.kCalStatus
     ])
-    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+
     compass.startStreaming()
 
 def main():
