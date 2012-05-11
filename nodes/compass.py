@@ -55,6 +55,14 @@ def start_compass(compass):
 
     compass.startStreaming()
 
+def try_start(compass):
+    try:
+        start_compass(compass)
+    except TimeoutException as e
+        rospy.logwarn('Compass restart attempt timed out.')
+        return False
+    return True
+
 def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
@@ -76,18 +84,23 @@ def main():
 
     warn_distortion  = False
     warn_calibration = False
+    is_started = True
     timeout_total = 0
     timeout_since_last = 0
 
     try:
         while True:
             try:
-                datum = compass.getData(6)
+                if is_started:
+                    datum = compass.getData(2)
+                else:
+                    is_started = try_start(compass)
+                    continue
             except TimeoutException as e:
                 rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
                 timeout_total += 1
                 timeout_since_last += 1
-                start_compass(compass)
+                is_started = try_start(compass)
                 continue
             timeout_since_last = 0
             now   = rospy.get_rostime()
