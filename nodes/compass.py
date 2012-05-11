@@ -55,7 +55,7 @@ def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
 
-    path  = rospy.get_param('~path', '/dev/ttyUSB0')
+    path  = rospy.get_param('~path')
     baud  = rospy.get_param('~baud', 38400)
     frame = rospy.get_param('~frame_id', '/base_link')
     cov   = rospy.get_param('~covariance', [
@@ -65,6 +65,9 @@ def main():
     ])
 
     compass = FieldforceTCM(path, baud)
+    ver = compass.getModelInfo()
+    print('Found Fieldforce TCM: {0}'.format(ver))
+
     start_compass(compass)
 
     warn_distortion  = False
