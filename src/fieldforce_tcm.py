@@ -429,7 +429,7 @@ class FieldforceTCM:
         self.remove_listener(t)
 
         if (r == None):
-            raise TimeoutException('Did not recv frame_id {0} within time limit.'.format(expected_frame_id), timeout)
+            raise TimeoutException('Did not recv frame_id {0} within {1} seconds.'.format(expected_frame_id, timeout), timeout)
         else:
             # XXX: change this when len(expected_frame_id) = 1?
             return (ord(r[0]), r[1:])
