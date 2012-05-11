@@ -39,7 +39,7 @@ inf = float('+inf')
 var = 0.034906585 ** 2
 
 def start_compass(compass):
-    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.setDataComponents([
         Component.kHeading,
         Component.kPAngle,
@@ -91,8 +91,8 @@ def main():
                 warn_calibration = True
 
             ax = math.radians(datum.RAngle)
-            ay = math.radians(-datum.PAngle)
-            az = math.radians(-datum.Heading)
+            ay = math.radians(datum.PAngle)
+            az = math.radians(datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
