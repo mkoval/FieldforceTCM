@@ -41,6 +41,10 @@ var = 0.034906585 ** 2
 def start_compass(compass):
     #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.stopAll()
+
+    compass.setConfig(Configuration.kCoeffCopySet, 0)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, 0)
+
     compass.setDataComponents([
         Component.kHeading,
         Component.kPAngle,
