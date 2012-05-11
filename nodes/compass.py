@@ -75,7 +75,7 @@ def main():
     try:
         while True:
             try:
-                datum = compass.getData(2)
+                datum = compass.getData(6)
             except TimeoutException as e:
                 rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
                 timeout_total += 1
