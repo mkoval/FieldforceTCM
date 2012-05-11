@@ -46,7 +46,7 @@ def start_compass(compass):
         Component.kDistortion,
         Component.kCalStatus
     ])
-    compass.setConfig(Configuration.kMountingRef, Orientation.kOrientationYUP180)
+    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.startStreaming()
 
 def main():
