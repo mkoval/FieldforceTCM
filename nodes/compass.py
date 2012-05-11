@@ -66,7 +66,7 @@ def main():
 
     compass = FieldforceTCM(path, baud)
     ver = compass.getModelInfo()
-    print('Found Fieldforce TCM: {0}'.format(ver))
+    rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
 
     start_compass(compass)
 
