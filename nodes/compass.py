@@ -40,6 +40,7 @@ var = 0.034906585 ** 2
 
 def start_compass(compass):
     #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    compass.stopAll()
     compass.setDataComponents([
         Component.kHeading,
         Component.kPAngle,
@@ -77,7 +78,6 @@ def main():
             except TimeoutException as e:
                 rospy.logwarn('Wait for data timed out, reseting compass.')
                 timeout_ct += 1
-                compass.stopStreaming()
                 start_compass(compass)
                 continue
             now   = rospy.get_rostime()
