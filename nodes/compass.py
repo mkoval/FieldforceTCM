@@ -68,7 +68,7 @@ def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
 
-    coeff = rospy.get_param('~norm_coeff', 0)
+    norm_coeff = rospy.get_param('~norm_coeff', 0)
     accel_coeff = rospy.get_param('~accel_coeff', 0)
 
     path  = rospy.get_param('~path')
