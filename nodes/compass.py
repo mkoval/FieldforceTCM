@@ -58,7 +58,7 @@ def start_compass(compass):
 def try_start(compass):
     try:
         start_compass(compass)
-    except TimeoutException as e
+    except TimeoutException as e:
         rospy.logwarn('Compass restart attempt timed out.')
         return False
     return True
