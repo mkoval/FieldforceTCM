@@ -29,7 +29,7 @@ import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
 import math
 
-from fieldforce_tcm import Calibration, Component, Configuration, FieldforceTCM, Orientation
+from fieldforce_tcm import Calibration, Component, Configuration, FieldforceTCM, Orientation, TimeoutException
 from geometry_msgs.msg import Quaternion, Vector3
 from std_msgs.msg import Header
 from sensor_msgs.msg import Imu
