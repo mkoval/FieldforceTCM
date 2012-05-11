@@ -69,17 +69,20 @@ def main():
 
     warn_distortion  = False
     warn_calibration = False
-    timeout_ct = 0
+    timeout_total = 0
+    timeout_since_last = 0
 
     try:
         while True:
             try:
                 datum = compass.readData(2)
             except TimeoutException as e:
-                rospy.logwarn('Wait for data timed out, reseting compass.')
-                timeout_ct += 1
+                rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
+                timeout_total += 1
+                timeout_since_last += 1
                 start_compass(compass)
                 continue
+            timeout_since_last = 0
             now   = rospy.get_rostime()
 
             if datum.Distortion and not warn_distortion:
