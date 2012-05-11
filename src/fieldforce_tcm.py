@@ -506,13 +506,13 @@ class FieldforceTCM:
 
         return self._createDatum(data)
 
-    def getData(self):
+    def getData(self, timeout=None):
         """
         Query a single packet of data that containing the components specified
         by setDataComponents(). All other components are set to zero.
         """
         self._sendMessage(FrameID.kGetData)
-        return self.readData()
+        return self.readData(timeout)
 
     def setConfig(self, config_id, value):
         """
