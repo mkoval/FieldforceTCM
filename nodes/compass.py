@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
 Copyright (c) 2012, Michael Koval
+Copyright 2012, Cody Schafer <cpschafer --- gmail.com>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -28,7 +29,7 @@ import roslib; roslib.load_manifest('fieldforce_tcm')
 import rospy
 import math
 
-from fieldforce_tcm import Calibration, Component, Configuration, FieldforceTCM, Orientation
+from fieldforce_tcm import Calibration, Component, Configuration, FieldforceTCM, Orientation, TimeoutException
 from geometry_msgs.msg import Quaternion, Vector3
 from std_msgs.msg import Header
 from sensor_msgs.msg import Imu
@@ -37,11 +38,36 @@ from tf import transformations
 inf = float('+inf')
 var = 0.034906585 ** 2
 
+def start_compass(compass):
+    #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    compass.stopAll()
+
+    compass.setConfig(Configuration.kCoeffCopySet, 0)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, 0)
+
+    compass.setDataComponents([
+        Component.kHeading,
+        Component.kPAngle,
+        Component.kRAngle,
+        Component.kDistortion,
+        Component.kCalStatus
+    ])
+
+    compass.startStreaming()
+
+def try_start(compass):
+    try:
+        start_compass(compass)
+    except TimeoutException as e:
+        rospy.logwarn('Compass restart attempt timed out.')
+        return False
+    return True
+
 def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
 
-    path  = rospy.get_param('~path', '/dev/ttyUSB0')
+    path  = rospy.get_param('~path')
     baud  = rospy.get_param('~baud', 38400)
     frame = rospy.get_param('~frame_id', '/base_link')
     cov   = rospy.get_param('~covariance', [
@@ -51,22 +77,32 @@ def main():
     ])
 
     compass = FieldforceTCM(path, baud)
-    compass.setDataComponents([
-        Component.kHeading,
-        Component.kPAngle,
-        Component.kRAngle,
-        Component.kDistortion,
-        Component.kCalStatus
-    ])
-    compass.setConfig(Configuration.kMountingRef, Orientation.kOrientationYUP180)
-    compass.startStreaming()
+    ver = compass.getModelInfo()
+    rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
+
+    start_compass(compass)
 
     warn_distortion  = False
     warn_calibration = False
+    is_started = True
+    timeout_total = 0
+    timeout_since_last = 0
 
     try:
         while True:
-            datum = compass.getData()
+            try:
+                if is_started:
+                    datum = compass.getData(2)
+                else:
+                    is_started = try_start(compass)
+                    continue
+            except TimeoutException as e:
+                rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
+                timeout_total += 1
+                timeout_since_last += 1
+                is_started = try_start(compass)
+                continue
+            timeout_since_last = 0
             now   = rospy.get_rostime()
 
             if datum.Distortion and not warn_distortion:
@@ -78,8 +114,8 @@ def main():
                 warn_calibration = True
 
             ax = math.radians(datum.RAngle)
-            ay = math.radians(-datum.PAngle)
-            az = math.radians(-datum.Heading)
+            ay = math.radians(datum.PAngle)
+            az = math.radians(datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
@@ -92,7 +128,7 @@ def main():
                 linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
 
             )
-    except Exception, e:
+    except Exception as e:
         compass.stopStreaming()
         compass.close()
         raise e

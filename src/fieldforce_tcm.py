@@ -292,6 +292,10 @@ class FieldforceTCM:
                 self._wait_and_read_all()
                 rdy_pkts = self._decode()
                 if rdy_pkts:
+                    #for pkt in rdy_pkts:
+                    #    fid = ord(pkt[0])
+                    #    print 'new pkt: {0} {1}'.format(FrameID.invert[fid], fid)
+
                     self._notify_listeners(rdy_pkts)
         return do_it
 
@@ -392,7 +396,6 @@ class FieldforceTCM:
         del b[0:good_pos]
         self.discard_stat += discard_amt
 
-        #print 'decode:', repr(bytes(b))
         return rdy_pkts
 
     def remove_listener(self, r):
@@ -429,7 +432,7 @@ class FieldforceTCM:
         self.remove_listener(t)
 
         if (r == None):
-            raise TimeoutException('Did not recv frame_id {0} within time limit.'.format(expected_frame_id), timeout)
+            raise TimeoutException('Did not recv frame_id {0} within {1} seconds.'.format(expected_frame_id, timeout), timeout)
         else:
             # XXX: change this when len(expected_frame_id) = 1?
             return (ord(r[0]), r[1:])
@@ -482,11 +485,11 @@ class FieldforceTCM:
         (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
     
-    def readData(self):
+    def readData(self, timeout=None):
         """
         Read a single DataResp frame
         """
-        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp)
+        (_, payload) = self._recvSpecificMessage(FrameID.kDataResp, timeout=timeout)
 
         (comp_count, ) = struct.unpack('>B', payload[0])
         comp_index = 0
@@ -506,13 +509,13 @@ class FieldforceTCM:
 
         return self._createDatum(data)
 
-    def getData(self):
+    def getData(self, timeout=None):
         """
         Query a single packet of data that containing the components specified
         by setDataComponents(). All other components are set to zero.
         """
         self._sendMessage(FrameID.kGetData)
-        return self.readData()
+        return self.readData(timeout)
 
     def setConfig(self, config_id, value):
         """
