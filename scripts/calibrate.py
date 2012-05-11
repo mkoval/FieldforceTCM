@@ -65,7 +65,7 @@ def _term_buffer(on):
         it[3] &= ~ termios.ICANON
     termios.tcsetattr(_stdin, termios.TCSANOW, it)
 
-def init_for_calib(compass, auto, num_samples, calib_type):
+def init_for_calib(compass, auto, num_samples, calib_type, norm_coeff, accel_coef):
     # Using the kSetParam command, set the number of tap filters to 32.
     compass.setFilter(32)
     # Using the kSetConfig command, set kUserCalAutoSampling. “False” is
@@ -75,8 +75,8 @@ def init_for_calib(compass, auto, num_samples, calib_type):
     #   calibration) and/or kAccelCoeffCopySet (accelerometer calibration).
     #   These fields allow the user to save multiple sets of calibration
     #   coefficients.  “0” is the default.
-    compass.setConfig(Configuration.kCoeffCopySet, 1)
-    compass.setConfig(Configuration.kAccelCoeffCopySet, 1)
+    compass.setConfig(Configuration.kCoeffCopySet, norm_coeff)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, accel_coef)
     # Using the kSetConfig command again, set kUserCalNumPoints to the
     # appropriate number of calibration points. The number of calibration
     # points should be at least 12 for Full Range Calibration, Limited Tilt
@@ -106,14 +106,14 @@ def init_for_calib(compass, auto, num_samples, calib_type):
 
 def main():
     #if not pygame.mixer: print('Warning, sound disabled')
-    if len(argv) < 2:
-        exit('usage: {0} <serial port>'.format(argv[0]))
+    if len(argv) < 4:
+        exit('usage: {0} <serial port> <norm coeff> <accel coeff>'.format(argv[0]))
 
     fname   = argv[1]
+	norm_coeff = int(argv[2])
+	accel_coeff = int(argv[3])
     compass = FieldforceTCM(fname, 38400)
     event   = EventQueue()
-    #pygame.mixer.init()
-    #exit('Could not open {0}, {1}'.format(fname, e))
 
     COMPASS_IN_CALIB   = 0
     COMPASS_CALIB_DONE = 1
@@ -156,7 +156,7 @@ def main():
     #calib_type = Calibration.k2DCalibration
 
     compass.stopAll()
-    init_for_calib(compass, auto, num_samples, calib_type)
+    init_for_calib(compass, auto, num_samples, calib_type, norm_coeff, accel_coeff)
 
 
     started_once = True
@@ -194,7 +194,7 @@ def main():
                     compass.takeUserCalSample()
                 elif not in_calib:
                     if not started_once:
-                        init_for_calib(compass, auto, num_samples)
+                        init_for_calib(compass, auto, num_samples, norm_ceoff, accel_coeff)
                     print('Restarting calib')
                     compass.startCalibration()
             elif ev.key == 's' or ev.key == 'S':
