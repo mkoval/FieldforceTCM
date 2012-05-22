@@ -110,8 +110,8 @@ def main():
         exit('usage: {0} <serial port> <norm coeff> <accel coeff>'.format(argv[0]))
 
     fname   = argv[1]
-	norm_coeff = int(argv[2])
-	accel_coeff = int(argv[3])
+    norm_coeff = int(argv[2])
+    accel_coeff = int(argv[3])
     compass = FieldforceTCM(fname, 38400)
     event   = EventQueue()
 
