@@ -40,7 +40,7 @@ var = 0.034906585 ** 2
 
 
 def start_compass(compass, norm_coeff, accel_coeff):
-    #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.stopAll()
 
     compass.setConfig(Configuration.kCoeffCopySet, norm_coeff)
@@ -117,15 +117,16 @@ def main():
                 rospy.logwarn('Compass is not calibrated.')
                 warn_calibration = True
 
+            # FIXME: This should not be negated.
             ax = math.radians(datum.RAngle)
             ay = math.radians(datum.PAngle)
-            az = math.radians(datum.Heading)
+            az = -math.radians(datum.Heading)
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
                 header = Header(stamp=now, frame_id=frame),
                 orientation            = Quaternion(*quaternion),
-                orientation_covariance = [ 0.0 ] * 9,
+                orientation_covariance = cov,
                 angular_velocity            = Vector3(0, 0, 0),
                 angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
                 linear_acceleration            = Vector3(0, 0, 0),

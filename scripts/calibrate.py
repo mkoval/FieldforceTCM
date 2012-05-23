@@ -150,7 +150,7 @@ def main():
     ver = compass.getModelInfo()
     print('Found Fieldforce TCM: {0}'.format(ver))
 
-    num_samples = 12
+    num_samples = 20
     auto = False
     calib_type = Calibration.kLimitedTiltCalibraion
     #calib_type = Calibration.k2DCalibration
