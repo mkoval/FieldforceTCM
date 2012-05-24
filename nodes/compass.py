@@ -79,10 +79,14 @@ def main():
         0.0, inf, 0.0,
         0.0, 0.0, var
     ])
+    declination = rospy.get_param('~declination', 0.0)
 
     compass = FieldforceTCM(path, baud)
     ver = compass.getModelInfo()
     rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
+
+    compass.setConfig(Configuration.kDeclination, declination)
+    compass.setFilter(16)
 
     start_compass(compass, norm_coeff, accel_coeff)
 
@@ -120,7 +124,7 @@ def main():
             # FIXME: This should not be negated.
             ax = math.radians(datum.RAngle)
             ay = math.radians(datum.PAngle)
-            az = -math.radians(datum.Heading)
+            az = -math.radians(datum.Heading) - math.pi / 2 - declination
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
