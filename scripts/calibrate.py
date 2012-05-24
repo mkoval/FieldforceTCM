@@ -108,12 +108,13 @@ def main():
     #if not pygame.mixer: print('Warning, sound disabled')
     if len(argv) < 4:
         exit('usage: {0} <serial port> <norm coeff> <accel coeff>'.format(argv[0]))
-
+        
     fname   = argv[1]
     norm_coeff = int(argv[2])
     accel_coeff = int(argv[3])
     compass = FieldforceTCM(fname, 38400)
     event   = EventQueue()
+
 
     COMPASS_IN_CALIB   = 0
     COMPASS_CALIB_DONE = 1
@@ -158,6 +159,12 @@ def main():
     compass.stopAll()
     init_for_calib(compass, auto, num_samples, calib_type, norm_coeff, accel_coeff)
 
+    if len(argv) > 4 and argv[4] == 'reset':
+        print('resetting to factory defaults')
+        compass.resetMagCalibration()
+        compass.resetAccelCalibration()
+        print('reset to factory defaults')
+        return
 
     started_once = True
     running  = True

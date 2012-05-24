@@ -81,7 +81,7 @@ class FrameID:
     kAcqParamsResp      = 27
     kPowerDownDone      = 28
     kFactoryUserCal     = 29
-    kFactorUserCalDone  = 30
+    kFactoryUserCalDone = 30
     kTakeUserCalSample  = 31
     kFactoryInclCal     = 36
     kFactoryInclCalDone = 37
@@ -723,5 +723,13 @@ class FieldforceTCM:
             return (True, scores)
         else:
             raise IOError('Unexpected frame id: {0}.'.format(frame_id))
+
+    def resetMagCalibration(self):
+        self._sendMessage(FrameID.kFactoryUserCal)
+        self._recvSpecificMessage(FrameID.kFactoryUserCalDone)
+
+    def resetAccelCalibration(self):
+        self._sendMessage(FrameID.kFactoryInclCal)
+        self._recvSpecificMessage(FrameID.kFactoryInclCalDone)
 
 # vim: set et sw=4 ts=4:

@@ -124,7 +124,7 @@ def main():
             # FIXME: This should not be negated.
             ax = math.radians(datum.RAngle)
             ay = math.radians(datum.PAngle)
-            az = -math.radians(datum.Heading) - math.pi / 2
+            az = -math.radians(datum.Heading) - 0.70911727 - 0.546342
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
