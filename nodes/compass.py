@@ -40,8 +40,11 @@ var = 0.034906585 ** 2
 
 
 def start_compass(compass, norm_coeff, accel_coeff):
-    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.stopAll()
+
+    compass.setConfig(Configuration.kDeclination, declination)
+    compass.setFilter(16)
+    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
 
     compass.setConfig(Configuration.kCoeffCopySet, norm_coeff)
     compass.setConfig(Configuration.kAccelCoeffCopySet, accel_coeff)
@@ -80,19 +83,18 @@ def main():
         0.0, 0.0, var
     ])
     declination = rospy.get_param('~declination', 0.0)
+    hack_value  = rospy.get_param('~hack_value', 0.0)
 
-    compass = FieldforceTCM(path, baud)
-    ver = compass.getModelInfo()
-    rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
-
-    compass.setConfig(Configuration.kDeclination, declination)
-    compass.setFilter(16)
-
-    start_compass(compass, norm_coeff, accel_coeff)
+    try:
+        compass = FieldforceTCM(path, baud)
+        ver = compass.getModelInfo()
+        rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
+    except TimeoutException:
+        pass
 
     warn_distortion  = False
     warn_calibration = False
-    is_started = True
+    is_started = False
     timeout_total = 0
     timeout_since_last = 0
 
@@ -124,7 +126,7 @@ def main():
             # FIXME: This should not be negated.
             ax = math.radians(datum.RAngle)
             ay = math.radians(datum.PAngle)
-            az = -math.radians(datum.Heading) - 0.70911727 - 0.546342
+            az = -math.radians(datum.Heading) + hack_value
             quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
             pub.publish(
