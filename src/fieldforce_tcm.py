@@ -143,6 +143,8 @@ class Calibration:
     kAccelCalibration         = 100
     kAccelMagneticCalibration = 110
 
+_DEFAULT_TIMEOUT = 0.5
+
 class _one_msg_stall:
     def __init__(self, *frame_ids):
         self.cond = threading.Condition()
@@ -190,6 +192,12 @@ class TimeoutException(Exception):
         Exception.__init__(self, msg)
         self.time=time
 
+_struct_uint8   = Struct('>B')
+_struct_uint16  = Struct('>H')
+_struct_uint32  = Struct('>I')
+_struct_float32 = Struct('>f')
+_struct_boolean = Struct('>?')
+
 class FieldforceTCM:
     Component = namedtuple('Component', [
         'name', 'struct'
@@ -213,39 +221,34 @@ class FieldforceTCM:
     good_cal_score = CalScores('< 1', 'ignore (pni reserved)', '< 1',
             '< 1', '< 1', 'angle of tilt' )
 
-    struct_uint8   = Struct('>B')
-    struct_uint16  = Struct('>H')
-    struct_uint32  = Struct('>I')
-    struct_float32 = Struct('>f')
-    struct_boolean = Struct('>?')
 
     components = {
-        5:  Component('Heading',     struct_float32),
-        7:  Component('Temperature', struct_float32),
-        8:  Component('Distortion',  struct_boolean),
-        9:  Component('CalStatus',   struct_boolean),
-        21: Component('PAligned',    struct_float32),
-        22: Component('RAligned',    struct_float32),
-        23: Component('IZAligned',   struct_float32),
-        24: Component('PAngle',      struct_float32),
-        25: Component('RAngle',      struct_float32),
-        27: Component('XAligned',    struct_float32),
-        28: Component('YAligned',    struct_float32),
-        29: Component('ZAligned',    struct_float32)
+        5:  Component('Heading',     _struct_float32),
+        7:  Component('Temperature', _struct_float32),
+        8:  Component('Distortion',  _struct_boolean),
+        9:  Component('CalStatus',   _struct_boolean),
+        21: Component('PAligned',    _struct_float32),
+        22: Component('RAligned',    _struct_float32),
+        23: Component('IZAligned',   _struct_float32),
+        24: Component('PAngle',      _struct_float32),
+        25: Component('RAngle',      _struct_float32),
+        27: Component('XAligned',    _struct_float32),
+        28: Component('YAligned',    _struct_float32),
+        29: Component('ZAligned',    _struct_float32)
     }
 
     config = {
-        1:  Component('Declination',         struct_float32),
-        2:  Component('TrueNorth',           struct_boolean),
-        6:  Component('BigEndian',           struct_boolean),
-        10: Component('MountingRef',         struct_uint8),
-        12: Component('UserCalNumPoints',    struct_uint32),
-        13: Component('UserCalAutoSampling', struct_boolean),
-        14: Component('BaudRate',            struct_uint8),
-        15: Component('MilOutput',           struct_boolean),
-        16: Component('DataCal',             struct_boolean),
-        18: Component('CoeffCopySet',        struct_uint32),
-        19: Component('AccelCoeffCopySet',   struct_uint32)
+        1:  Component('Declination',         _struct_float32),
+        2:  Component('TrueNorth',           _struct_boolean),
+        6:  Component('BigEndian',           _struct_boolean),
+        10: Component('MountingRef',         _struct_uint8),
+        12: Component('UserCalNumPoints',    _struct_uint32),
+        13: Component('UserCalAutoSampling', _struct_boolean),
+        14: Component('BaudRate',            _struct_uint8),
+        15: Component('MilOutput',           _struct_boolean),
+        16: Component('DataCal',             _struct_boolean),
+        18: Component('CoeffCopySet',        _struct_uint32),
+        19: Component('AccelCoeffCopySet',   _struct_uint32)
     }
 
     fir_defaults = {
@@ -417,25 +420,44 @@ class FieldforceTCM:
         l.release()
         return cb
 
-    def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
+    def _recv_msg_prep(self, *expected_frame_id, **only_timeout):
         # XXX: Really, python?
         # 'def x(*a, b=2)' is not allowed.
         if 'timeout' not in only_timeout:
-            timeout = 0.5
+            timeout = _DEFAULT_TIMEOUT
         else:
             timeout = only_timeout['timeout']
         s = _one_msg_stall(*expected_frame_id)
         t = self.add_listener(s.cb())
 
+        return (s, t)
+
+    def _recv_msg_wait(self, w):
+        s, t = w
         r = s.wait(timeout)
 
         self.remove_listener(t)
 
         if (r == None):
-            raise TimeoutException('Did not recv frame_id {0} within {1} seconds.'.format(expected_frame_id, timeout), timeout)
+            raise TimeoutException('Did not recv frame_id {0} within {1} seconds.'.format(s.frame_ids, timeout), timeout)
         else:
-            # XXX: change this when len(expected_frame_id) = 1?
             return (ord(r[0]), r[1:])
+
+    def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
+        w = self._prep_recv_msg(self, *expected_frame_id, **only_timeout)
+        return self._wait_recv_msg(w)
+
+    def _send_msg_w_resp(self, send_frame_id, payload, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
+        """ Send a full message (with payload) and wait for a responce """
+        w = self._recv_msg_prep(self, *send_frame_id, timeout=timeout)
+        self._sendMessage(send_frame_id, payload)
+        return self._recv_msg_wait(w)
+
+    def _send_s_msg_w_resp(self, send_frame_id, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
+        """ Send a simple message (only frame id) and wait for a responce. """
+        w = self._recv_msg_prep(self, *send_frame_id, timeout=timeout)
+        self._sendMessage(send_frame_id)
+        return self._recv_msg_wait(w)
 
     def __init__(self, path, baud):
         self.fp = Serial(
@@ -481,8 +503,7 @@ class FieldforceTCM:
         """
         Query the module's type and firmware revision number.
         """
-        self._sendMessage(FrameID.kGetModInfo)
-        (_, payload) = self._recvSpecificMessage(FrameID.kModInfoResp)
+        (_, payload) = self._send_s_msg_w_resp(FrameID.kGetModInfo, FrameID.kGetModInfo)
         return self.ModInfo(*struct.unpack('>4s4s', payload))
     
     def readData(self, timeout=None):
@@ -514,6 +535,7 @@ class FieldforceTCM:
         Query a single packet of data that containing the components specified
         by setDataComponents(). All other components are set to zero.
         """
+        # FIXME: race condition: data may already have passed us by before we are listening.
         self._sendMessage(FrameID.kGetData)
         return self.readData(timeout)
 
@@ -523,10 +545,10 @@ class FieldforceTCM:
         one of the values in Configuration. Acceptable values deend upon the
         configuration option being set.
         """
-        payload_id    = self.struct_uint8.pack(config_id)
+        payload_id    = self._struct_uint8.pack(config_id)
         payload_value = self.config[config_id].struct.pack(value)
-        self._sendMessage(FrameID.kSetConfig, payload_id + payload_value)
-        self._recvSpecificMessage(FrameID.kSetConfigDone)
+
+        self._send_msg_w_resp(FrameID.kSetConfig, payload_id + payload_value, FrameID.kSetConfigDone)
 
     def setOrientation(self, orientation):
         """
@@ -544,11 +566,9 @@ class FieldforceTCM:
         """
         Get the value of a single configuration value based on config_id.
         """
-        payload_id = self.struct_uint8.pack(config_id)
-        self._sendMessage(FrameID.kGetConfig, payload_id)
-
-        (_, response) = self._recvSpecificMessage(FrameID.kConfigResp)
-        (response_id, ) = self.struct_uint8.unpack(response[0])
+        payload_id = self._struct_uint8.pack(config_id)
+        (_, response) = self._send_msg_w_resp(FrameID.kGetConfig, payload_id, FrameID.kConfigResp)
+        (response_id, ) = self._struct_uint8.unpack(response[0])
 
         if response_id == config_id:
             (value, ) = self.config[config_id].struct.unpack(response[1:])
@@ -573,8 +593,7 @@ class FieldforceTCM:
             assert len(values) == count
 
         payload = struct.pack('>BBB{0}d'.format(count), 3, 1, count, *values)
-        self._sendMessage(FrameID.kSetParam, payload)
-        self._recvSpecificMessage(FrameID.kSetParamDone)
+        self._send_msg_w_resp(FrameID.kSetParam, payload, FrameID.kSetParamDone)
 
     def getFilter(self):
         """
@@ -582,9 +601,9 @@ class FieldforceTCM:
         setFilter() for more information.
         """
         payload_request  = struct.pack('>BB', 3, 1)
-        self._sendMessage(FrameID.kGetParam, payload_request)
 
-        (_, payload_response) = self._recvSpecificMessage(FrameID.kParamResp)
+        (_, payload_response) = self._send_msg_w_resp(FrameID.kGetParam, payload_request, FrameID.kParamResp)
+
         param_id, axis_id, count = struct.unpack('>BBB', payload_response[0:3])
 
         if param_id != 3:
@@ -618,16 +637,15 @@ class FieldforceTCM:
         startStreaming().
         """
         payload = struct.pack('>BBff', mode, flush_filter, acq_time, resp_time)
-        self._sendMessage(FrameID.kSetAcqParams, payload)
-        self._recvSpecificMessage(FrameID.kAcqParamsDone)
+
+        self._send_msg_w_resp(FrameID.kSetAcqParams, payload, FrameID.kAcqParamsDone)
 
     def getAcquisitionParams(self):
         """
         Gets the current acquisition mode. See setAcquisitionParams() for more
         information.
         """
-        self._sendMessage(FrameID.kGetAcqParams)
-        (_, payload)  = self._recvSpecificMessage(FrameID.kAcqParamsResp)
+        (_, payload) = self._send_s_msg_w_resp(FrameID.kGetAcqParams, kAcqParamsResp)
         response = struct.unpack('>BBff', payload)
         return self.AcqParams(*response)
 
@@ -664,15 +682,15 @@ class FieldforceTCM:
         Power up the sensor after a powerDown(). This has undefined results if
         the sensor is already powered on.
         """
+        w = self._recv_msg_prep(FrameID.kPowerUp)
         self._send(b'\xFF')
-        self._recvSpecificMessage(FrameID.kPowerUp)
+        self._recv_msg_wait(w)
 
     def powerDown(self):
         """
         Power down the sensor down.
         """
-        self._sendMessage(FrameID.kPowerDown)
-        self._recvSpecificMessage(FrameID.kPowerDownDone)
+        self._send_s_msg_w_resp(FrameID.kPowerDown, FrameID.kPowerDownDone)
 
     def save(self):
         """
@@ -681,9 +699,8 @@ class FieldforceTCM:
         paired with any configuration options (e.g. calibration) that are
         intended to be persistant.
         """
-        self._sendMessage(FrameID.kSave)
-        (_, response) = self._recvSpecificMessage(FrameID.kSaveDone)
-        (code, ) = self.struct_uint16.unpack(response)
+        (_, response) = self._send_s_msg_w_resp(FrameID.kSave, FrameID.kSaveDone)
+        (code, ) = _struct_uint16.unpack(response)
 
         if code != 0:
             raise IOError('Save failed with error code {0}.'.format(code))
@@ -697,7 +714,7 @@ class FieldforceTCM:
         if mode == None:
             self._sendMessage(FrameID.kStartCal)
         else:
-            payload_mode = self.struct_uint32.pack(mode)
+            payload_mode = _struct_uint32.pack(mode)
             self._sendMessage(FrameID.kStartCal, payload_mode)
 
 
@@ -713,7 +730,7 @@ class FieldforceTCM:
         # sample. This continues until the calibration has converged or the
         # maximum number of points have been collected.
         if frame_id == FrameID.kUserCalSampCount:
-            (sample_num, ) = self.struct_uint32.unpack(message)
+            (sample_num, ) = _struct_uint32.unpack(message)
             return (False, sample_num)
         # Calibration accuracy is reported in a single UserCalScore message
         # once calibration is complete.
@@ -725,11 +742,9 @@ class FieldforceTCM:
             raise IOError('Unexpected frame id: {0}.'.format(frame_id))
 
     def resetMagCalibration(self):
-        self._sendMessage(FrameID.kFactoryUserCal)
-        self._recvSpecificMessage(FrameID.kFactoryUserCalDone)
+        self._send_s_msg_w_resp(FrameID.kFactoryUserCal, FrameID.kFactoryUserCalDone)
 
     def resetAccelCalibration(self):
-        self._sendMessage(FrameID.kFactoryInclCal)
-        self._recvSpecificMessage(FrameID.kFactoryInclCalDone)
+        self._send_s_msg_w_resp(FrameID.kFactoryInclCal, FrameID.kFactoryInclCalDone)
 
 # vim: set et sw=4 ts=4:
