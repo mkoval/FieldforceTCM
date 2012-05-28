@@ -443,13 +443,13 @@ class FieldforceTCM:
 
     def _send_msg_w_resp(self, send_frame_id, payload, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
         """ Send a full message (with payload) and wait for a responce """
-        w = self._recv_msg_prep(self, send_frame_id)
+        w = self._recv_msg_prep(self, recv_frame_id)
         self._sendMessage(send_frame_id, payload)
         return self._recv_msg_wait(w, timeout=timeout)
 
     def _send_s_msg_w_resp(self, send_frame_id, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
         """ Send a simple message (only frame id) and wait for a responce. """
-        w = self._recv_msg_prep(self, send_frame_id)
+        w = self._recv_msg_prep(self, recv_frame_id)
         self._sendMessage(send_frame_id)
         return self._recv_msg_wait(w, timeout=timeout)
 
