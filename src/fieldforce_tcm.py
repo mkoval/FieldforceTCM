@@ -539,7 +539,7 @@ class FieldforceTCM:
         one of the values in Configuration. Acceptable values deend upon the
         configuration option being set.
         """
-        payload_id    = self._struct_uint8.pack(config_id)
+        payload_id    = _struct_uint8.pack(config_id)
         payload_value = self.config[config_id].struct.pack(value)
 
         self._send_msg_w_resp(FrameID.kSetConfig, payload_id + payload_value, FrameID.kSetConfigDone)
