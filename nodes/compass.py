@@ -38,12 +38,16 @@ from tf import transformations
 inf = float('+inf')
 var = 0.034906585 ** 2
 
-def start_compass(compass):
-    #compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+
+def start_compass(compass, mag_slot, accel_slot, declination):
     compass.stopAll()
 
-    compass.setConfig(Configuration.kCoeffCopySet, 0)
-    compass.setConfig(Configuration.kAccelCoeffCopySet, 0)
+    compass.setFilter(16)
+    compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    compass.setConfig(Configuration.kDeclination, declination)
+
+    compass.setConfig(Configuration.kCoeffCopySet, mag_slot)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, accel_slot)
 
     compass.setDataComponents([
         Component.kHeading,
@@ -55,9 +59,9 @@ def start_compass(compass):
 
     compass.startStreaming()
 
-def try_start(compass):
+def try_start(compass, mag_slot, accel_slot, decl):
     try:
-        start_compass(compass)
+        start_compass(compass, mag_slot, accel_slot, decl)
     except TimeoutException as e:
         rospy.logwarn('Compass restart attempt timed out.')
         return False
@@ -67,6 +71,9 @@ def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
 
+    mag_slot = rospy.get_param('~mag_slot', 0)
+    accel_slot = rospy.get_param('~accel_slot', 0)
+
     path  = rospy.get_param('~path')
     baud  = rospy.get_param('~baud', 38400)
     frame = rospy.get_param('~frame_id', '/base_link')
@@ -75,63 +82,62 @@ def main():
         0.0, inf, 0.0,
         0.0, 0.0, var
     ])
+    declination = rospy.get_param('~declination', 0.0)
+    hack_value  = rospy.get_param('~hack_value', 0.0)
 
-    compass = FieldforceTCM(path, baud)
-    ver = compass.getModelInfo()
-    rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
-
-    start_compass(compass)
+    try:
+        compass = FieldforceTCM(path, baud)
+        ver = compass.getModelInfo()
+        rospy.loginfo('Found Fieldforce TCM: {0}'.format(ver))
+    except TimeoutException:
+        pass
 
     warn_distortion  = False
     warn_calibration = False
-    is_started = True
+    is_started = False
     timeout_total = 0
     timeout_since_last = 0
 
-    try:
-        while True:
-            try:
-                if is_started:
-                    datum = compass.getData(2)
-                else:
-                    is_started = try_start(compass)
-                    continue
-            except TimeoutException as e:
-                rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
-                timeout_total += 1
-                timeout_since_last += 1
-                is_started = try_start(compass)
+    while not rospy.is_shutdown():
+        try:
+            if is_started:
+                datum = compass.getData(2)
+            else:
+                is_started = try_start(compass, mag_slot, accel_slot, declination)
                 continue
-            timeout_since_last = 0
-            now   = rospy.get_rostime()
+        except TimeoutException as e:
+            rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
+            timeout_total += 1
+            timeout_since_last += 1
+            is_started = try_start(compass, mag_slot, accel_slot, declination)
+            continue
+        timeout_since_last = 0
+        now   = rospy.get_rostime()
 
-            if datum.Distortion and not warn_distortion:
-                rospy.logwarn('Magnometer has exceeded its linear range.')
-                warn_distortion = True
+        if datum.Distortion and not warn_distortion:
+            rospy.logwarn('Magnometer has exceeded its linear range.')
+            warn_distortion = True
 
-            if not datum.CalStatus and not warn_calibration:
-                rospy.logwarn('Compass is not calibrated.')
-                warn_calibration = True
+        if not datum.CalStatus and not warn_calibration:
+            rospy.logwarn('Compass is not calibrated.')
+            warn_calibration = True
 
-            ax = math.radians(datum.RAngle)
-            ay = math.radians(datum.PAngle)
-            az = math.radians(datum.Heading)
-            quaternion = transformations.quaternion_from_euler(ax, ay, az)
+        # FIXME: This should not be negated.
+        ax = math.radians(datum.RAngle)
+        ay = math.radians(datum.PAngle)
+        az = -math.radians(datum.Heading) + hack_value
+        quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
-            pub.publish(
-                header = Header(stamp=now, frame_id=frame),
-                orientation            = Quaternion(*quaternion),
-                orientation_covariance = [ 0.0 ] * 9,
-                angular_velocity            = Vector3(0, 0, 0),
-                angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
-                linear_acceleration            = Vector3(0, 0, 0),
-                linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
+        pub.publish(
+            header = Header(stamp=now, frame_id=frame),
+            orientation            = Quaternion(*quaternion),
+            orientation_covariance = cov,
+            angular_velocity            = Vector3(0, 0, 0),
+            angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
+            linear_acceleration            = Vector3(0, 0, 0),
+            linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
 
-            )
-    except Exception as e:
-        compass.stopStreaming()
-        compass.close()
-        raise e
+        )
 
 if __name__ == '__main__':
     try:
