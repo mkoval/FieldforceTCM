@@ -39,15 +39,15 @@ inf = float('+inf')
 var = 0.034906585 ** 2
 
 
-def start_compass(compass, norm_coeff, accel_coeff):
+def start_compass(compass, mag_slot, accel_slot, declination):
     compass.stopAll()
 
     compass.setConfig(Configuration.kDeclination, declination)
     compass.setFilter(16)
     compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
 
-    compass.setConfig(Configuration.kCoeffCopySet, norm_coeff)
-    compass.setConfig(Configuration.kAccelCoeffCopySet, accel_coeff)
+    compass.setConfig(Configuration.kCoeffCopySet, mag_slot)
+    compass.setConfig(Configuration.kAccelCoeffCopySet, accel_slot)
 
     compass.setDataComponents([
         Component.kHeading,
@@ -59,9 +59,9 @@ def start_compass(compass, norm_coeff, accel_coeff):
 
     compass.startStreaming()
 
-def try_start(compass, norm_coeff, accel_coeff):
+def try_start(compass, mag_slot, accel_slot, decl):
     try:
-        start_compass(compass, norm_coeff, accel_coeff)
+        start_compass(compass, mag_slot, accel_slot, decl)
     except TimeoutException as e:
         rospy.logwarn('Compass restart attempt timed out.')
         return False
@@ -71,8 +71,8 @@ def main():
     rospy.init_node('fieldforce_tcm')
     pub = rospy.Publisher('compass', Imu)
 
-    norm_coeff = rospy.get_param('~norm_coeff', 0)
-    accel_coeff = rospy.get_param('~accel_coeff', 0)
+    mag_slot = rospy.get_param('~mag_slot', 0)
+    accel_slot = rospy.get_param('~accel_slot', 0)
 
     path  = rospy.get_param('~path')
     baud  = rospy.get_param('~baud', 38400)
@@ -104,13 +104,13 @@ def main():
                 if is_started:
                     datum = compass.getData(2)
                 else:
-                    is_started = try_start(compass, norm_coeff, accel_coeff)
+                    is_started = try_start(compass, mag_slot, accel_slot, declination)
                     continue
             except TimeoutException as e:
                 rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
                 timeout_total += 1
                 timeout_since_last += 1
-                is_started = try_start(compass, norm_coeff, accel_coeff)
+                is_started = try_start(compass, mag_slot, accel_slot, declination)
                 continue
             timeout_since_last = 0
             now   = rospy.get_rostime()
