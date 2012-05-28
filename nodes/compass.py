@@ -42,9 +42,9 @@ var = 0.034906585 ** 2
 def start_compass(compass, mag_slot, accel_slot, declination):
     compass.stopAll()
 
-    compass.setConfig(Configuration.kDeclination, declination)
     compass.setFilter(16)
     compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
+    compass.setConfig(Configuration.kDeclination, declination)
 
     compass.setConfig(Configuration.kCoeffCopySet, mag_slot)
     compass.setConfig(Configuration.kAccelCoeffCopySet, accel_slot)
