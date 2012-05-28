@@ -439,7 +439,7 @@ class FieldforceTCM:
 
     def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
         w = self._recv_msg_prep(self, *expected_frame_id)
-        return self._wait_recv_msg(w, **only_timeout)
+        return self._recv_msg_wait(w, **only_timeout)
 
     def _send_msg_w_resp(self, send_frame_id, payload, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
         """ Send a full message (with payload) and wait for a responce """
