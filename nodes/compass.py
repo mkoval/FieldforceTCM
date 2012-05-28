@@ -98,7 +98,7 @@ def main():
     timeout_total = 0
     timeout_since_last = 0
 
-    while True:
+    while not rospy.is_shutdown():
         try:
             if is_started:
                 datum = compass.getData(2)
