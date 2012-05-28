@@ -60,11 +60,11 @@ def start_compass(compass, mag_slot, accel_slot, declination):
     compass.startStreaming()
 
 def try_start(compass, mag_slot, accel_slot, decl):
-    #try:
-    start_compass(compass, mag_slot, accel_slot, decl)
-    #except TimeoutException as e:
-    #    rospy.logwarn('Compass restart attempt timed out.')
-    #    return False
+    try:
+        start_compass(compass, mag_slot, accel_slot, decl)
+    except TimeoutException as e:
+        rospy.logwarn('Compass restart attempt timed out.')
+        return False
     return True
 
 def main():
