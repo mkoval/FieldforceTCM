@@ -98,51 +98,46 @@ def main():
     timeout_total = 0
     timeout_since_last = 0
 
-    try:
-        while True:
-            try:
-                if is_started:
-                    datum = compass.getData(2)
-                else:
-                    is_started = try_start(compass, mag_slot, accel_slot, declination)
-                    continue
-            except TimeoutException as e:
-                rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
-                timeout_total += 1
-                timeout_since_last += 1
+    while True:
+        try:
+            if is_started:
+                datum = compass.getData(2)
+            else:
                 is_started = try_start(compass, mag_slot, accel_slot, declination)
                 continue
-            timeout_since_last = 0
-            now   = rospy.get_rostime()
+        except TimeoutException as e:
+            rospy.logwarn('Wait for data timed out. Total timeouts: {0}, timouts since last data: {1}'.format(timeout_total, timeout_since_last))
+            timeout_total += 1
+            timeout_since_last += 1
+            is_started = try_start(compass, mag_slot, accel_slot, declination)
+            continue
+        timeout_since_last = 0
+        now   = rospy.get_rostime()
 
-            if datum.Distortion and not warn_distortion:
-                rospy.logwarn('Magnometer has exceeded its linear range.')
-                warn_distortion = True
+        if datum.Distortion and not warn_distortion:
+            rospy.logwarn('Magnometer has exceeded its linear range.')
+            warn_distortion = True
 
-            if not datum.CalStatus and not warn_calibration:
-                rospy.logwarn('Compass is not calibrated.')
-                warn_calibration = True
+        if not datum.CalStatus and not warn_calibration:
+            rospy.logwarn('Compass is not calibrated.')
+            warn_calibration = True
 
-            # FIXME: This should not be negated.
-            ax = math.radians(datum.RAngle)
-            ay = math.radians(datum.PAngle)
-            az = -math.radians(datum.Heading) + hack_value
-            quaternion = transformations.quaternion_from_euler(ax, ay, az)
+        # FIXME: This should not be negated.
+        ax = math.radians(datum.RAngle)
+        ay = math.radians(datum.PAngle)
+        az = -math.radians(datum.Heading) + hack_value
+        quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
-            pub.publish(
-                header = Header(stamp=now, frame_id=frame),
-                orientation            = Quaternion(*quaternion),
-                orientation_covariance = cov,
-                angular_velocity            = Vector3(0, 0, 0),
-                angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
-                linear_acceleration            = Vector3(0, 0, 0),
-                linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
+        pub.publish(
+            header = Header(stamp=now, frame_id=frame),
+            orientation            = Quaternion(*quaternion),
+            orientation_covariance = cov,
+            angular_velocity            = Vector3(0, 0, 0),
+            angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
+            linear_acceleration            = Vector3(0, 0, 0),
+            linear_acceleration_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ]
 
-            )
-    except Exception as e:
-        compass.stopStreaming()
-        compass.close()
-        raise e
+        )
 
 if __name__ == '__main__':
     try:
