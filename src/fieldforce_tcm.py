@@ -420,19 +420,13 @@ class FieldforceTCM:
         l.release()
         return cb
 
-    def _recv_msg_prep(self, *expected_frame_id, **only_timeout):
-        # XXX: Really, python?
-        # 'def x(*a, b=2)' is not allowed.
-        if 'timeout' not in only_timeout:
-            timeout = _DEFAULT_TIMEOUT
-        else:
-            timeout = only_timeout['timeout']
+    def _recv_msg_prep(self, *expected_frame_id):
         s = _one_msg_stall(*expected_frame_id)
         t = self.add_listener(s.cb())
 
         return (s, t)
 
-    def _recv_msg_wait(self, w):
+    def _recv_msg_wait(self, w, timeout = _DEFAULT_TIMEOUT):
         s, t = w
         r = s.wait(timeout)
 
@@ -444,20 +438,20 @@ class FieldforceTCM:
             return (ord(r[0]), r[1:])
 
     def _recvSpecificMessage(self, *expected_frame_id, **only_timeout):
-        w = self._prep_recv_msg(self, *expected_frame_id, **only_timeout)
-        return self._wait_recv_msg(w)
+        w = self._recv_msg_prep(self, *expected_frame_id)
+        return self._wait_recv_msg(w, **only_timeout)
 
-    def _send_msg_w_resp(self, send_frame_id, payload, recv_frame_id, timeout=None):
+    def _send_msg_w_resp(self, send_frame_id, payload, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
         """ Send a full message (with payload) and wait for a responce """
-        w = self._recv_msg_prep(self, send_frame_id, timeout=timeout)
+        w = self._recv_msg_prep(self, send_frame_id)
         self._sendMessage(send_frame_id, payload)
-        return self._recv_msg_wait(w)
+        return self._recv_msg_wait(w, timeout=timeout)
 
-    def _send_s_msg_w_resp(self, send_frame_id, recv_frame_id, timeout=None):
+    def _send_s_msg_w_resp(self, send_frame_id, recv_frame_id, timeout=_DEFAULT_TIMEOUT):
         """ Send a simple message (only frame id) and wait for a responce. """
-        w = self._recv_msg_prep(self, send_frame_id, timeout=timeout)
+        w = self._recv_msg_prep(self, send_frame_id)
         self._sendMessage(send_frame_id)
-        return self._recv_msg_wait(w)
+        return self._recv_msg_wait(w, timeout=timeout)
 
     def __init__(self, path, baud):
         self.fp = Serial(
