@@ -37,12 +37,12 @@ from tf import transformations
 
 inf = float('+inf')
 var = 0.034906585 ** 2
-
+alpha = 0
 
 def start_compass(compass, mag_slot, accel_slot, declination):
     compass.stopAll()
 
-    compass.setFilter(16)
+    compass.setFilter(8)
     compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.setConfig(Configuration.kDeclination, declination)
 
@@ -97,6 +97,7 @@ def main():
     is_started = False
     timeout_total = 0
     timeout_since_last = 0
+    last_yaw = 0.0
 
     while not rospy.is_shutdown():
         try:
@@ -128,10 +129,17 @@ def main():
         az = -math.radians(datum.Heading) + hack_value
         quaternion = transformations.quaternion_from_euler(ax, ay, az)
 
+        # FIXME
+        #delta_raw = (az - last_yaw) % (2 * math.pi)
+        #delta = min(delta_raw, 2 * math.pi - delta_raw)
+        #last_yaw = az;
+        cov_new = list(cov)
+        #cov_new[8] += alpha * delta
+
         pub.publish(
             header = Header(stamp=now, frame_id=frame),
             orientation            = Quaternion(*quaternion),
-            orientation_covariance = cov,
+            orientation_covariance = cov_new,
             angular_velocity            = Vector3(0, 0, 0),
             angular_velocity_covariance = [ -1, 0, 0, 0, 0, 0, 0, 0, 0 ],
             linear_acceleration            = Vector3(0, 0, 0),
