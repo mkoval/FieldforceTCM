@@ -36,13 +36,14 @@ from sensor_msgs.msg import Imu
 from tf import transformations
 
 inf = float('+inf')
-var = 0.034906585 ** 2
+var = 0.5
+#var = 0.034906585 ** 2
 alpha = 0
 
 def start_compass(compass, mag_slot, accel_slot, declination):
     compass.stopAll()
 
-    compass.setFilter(8)
+    compass.setFilter(0)
     compass.setConfig(Configuration.kMountingRef, Orientation.Y_UP_180)
     compass.setConfig(Configuration.kDeclination, declination)
 
